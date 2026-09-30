@@ -66,6 +66,15 @@ class CurrentAttributesTest < ActiveSupport::TestCase
     attribute :current, :previous
   end
 
+  class Zone < ActiveSupport::CurrentAttributes
+    attribute :time_zone
+
+    def time_zone=(time_zone)
+      super
+      Time.zone = time_zone
+    end
+  end
+
   # Use library specific minitest hook to catch Time.zone before reset is called via TestHelper
   def before_setup
     @original_time_zone = Time.zone
@@ -322,6 +331,192 @@ class CurrentAttributesTest < ActiveSupport::TestCase
   end
 
 
+  test "restoring_writes sets back what the block writes, through the writers" do
+    Current.world = "world/1"
+    Current.person = Person.new(7, "david", "Europe/Lisbon")
+
+    ActiveSupport::CurrentAttributes.restoring_writes do
+      Current.world = "world/2"
+      Current.person = Person.new(42, "jane", "Asia/Tokyo")
+
+      assert_equal "Asia/Tokyo", Time.zone.name
+      assert_equal 42, Session.current
+    end
+
+    assert_equal "world/1", Current.world
+    assert_equal "david", Current.person.name
+    assert_equal "Europe/Lisbon", Time.zone.name
+    assert_equal 7, Session.current
+  end
+
+  test "restoring_writes calls no writer for an attribute the block only reads" do
+    Current.person = Person.new(7, "david", "Europe/Lisbon")
+    Session.current = 99
+
+    ActiveSupport::CurrentAttributes.restoring_writes do
+      assert_equal "david", Current.person.name
+    end
+
+    assert_equal 99, Session.current
+  end
+
+  test "restoring_writes discards the instances created in the block" do
+    instance = ActiveSupport::CurrentAttributes.restoring_writes do
+      Current.world = "world/2"
+      Current.instance
+    end
+
+    assert_not_same instance, Current.instance
+    assert_nil Current.world
+  end
+
+  test "restoring_writes sets back the writes of an instance created in the block through its writers" do
+    Time.zone = "Europe/Lisbon"
+
+    ActiveSupport::CurrentAttributes.restoring_writes do
+      Current.person = Person.new(42, "jane", "Asia/Tokyo")
+      assert_equal "Asia/Tokyo", Time.zone.name
+    end
+
+    assert_nil Time.zone
+    assert_nil Current.person
+  end
+
+  test "restoring_writes sets back what the block writes when it raises" do
+    Current.world = "world/1"
+
+    assert_raises(RuntimeError) do
+      ActiveSupport::CurrentAttributes.restoring_writes do
+        Current.world = "world/2"
+        raise "boom"
+      end
+    end
+
+    assert_equal "world/1", Current.world
+  end
+
+  test "restoring_writes runs no reset callbacks, and sets back what a reset in the block clears" do
+    Current.world = "world/1"
+    Current.person = Person.new(7, "david", "Europe/Lisbon")
+
+    ActiveSupport::CurrentAttributes.restoring_writes { Current.world = "world/2" }
+
+    assert_nil Session.previous
+    assert_equal 7, Session.current
+
+    ActiveSupport::CurrentAttributes.restoring_writes do
+      Current.reset
+      assert_nil Current.world
+      assert_equal 7, Session.previous
+    end
+
+    assert_equal "world/1", Current.world
+    assert_equal "david", Current.person.name
+    assert_equal "Europe/Lisbon", Time.zone.name
+    assert_nil Session.previous
+    assert_equal 7, Session.current
+  end
+
+  test "restoring_writes keeps what set blocks in the block put back, and nests" do
+    Current.world = "world/1"
+
+    ActiveSupport::CurrentAttributes.restoring_writes do
+      Current.set(world: "world/2") { assert_equal "world/2", Current.world }
+      assert_equal "world/1", Current.world
+
+      Current.world = "outer"
+      ActiveSupport::CurrentAttributes.restoring_writes do
+        Current.world = "inner"
+        Session.current = 42
+      end
+
+      assert_equal "outer", Current.world
+      assert_nil Session.current
+    end
+
+    assert_equal "world/1", Current.world
+  end
+
+  test "restoring_writes around an isolated block sets back the caller's values through the caller's writers" do
+    Current.person = Person.new(7, "david", "Europe/Lisbon")
+
+    restoring_writes_isolated do
+      assert_nil Current.person
+      Current.person = Person.new(42, "jane", "Asia/Tokyo")
+
+      assert_equal "Asia/Tokyo", Time.zone.name
+      assert_equal 42, Session.current
+    end
+
+    assert_equal "david", Current.person.name
+    assert_equal "Europe/Lisbon", Time.zone.name
+    assert_equal 7, Session.current
+  end
+
+  test "restoring_writes around nested isolated blocks sets back each caller's values" do
+    Current.person = Person.new(7, "david", "Europe/Lisbon")
+
+    restoring_writes_isolated do
+      Current.person = Person.new(42, "jane", "Asia/Tokyo")
+
+      restoring_writes_isolated do
+        Current.person = Person.new(99, "bob", "America/Chicago")
+      end
+
+      assert_equal "jane", Current.person.name
+      assert_equal "Asia/Tokyo", Time.zone.name
+    end
+
+    assert_equal "david", Current.person.name
+    assert_equal "Europe/Lisbon", Time.zone.name
+  end
+
+  test "restoring_writes around an isolated block sets back a class the caller has no instance of through the block's writers" do
+    instance = restoring_writes_isolated do
+      Zone.time_zone = "Asia/Tokyo"
+      assert_equal "Asia/Tokyo", Time.zone.name
+      Zone.instance
+    end
+
+    assert_nil Time.zone
+    assert_not_same instance, Zone.instance
+  end
+
+  test "restoring_writes around an isolated block compares the block's values with the caller's, not with those it started with" do
+    Zone.time_zone = "Europe/Lisbon"
+
+    restoring_writes_isolated do
+      Zone.set(time_zone: nil) { Zone.time_zone = "Asia/Tokyo" }
+      assert_nil Time.zone
+    end
+
+    assert_equal "Europe/Lisbon", Time.zone.name
+  end
+
+  test "restoring_writes around an isolated block sets back what an executor's reset of the block's instances undid" do
+    ActiveSupport::ExecutionContext.with(nestable: false) do
+      # simulate executor hooks from active_support/railtie.rb
+      executor = Class.new(ActiveSupport::Executor)
+      executor.to_run { ActiveSupport::ExecutionContext.push }
+      executor.to_complete do
+        ActiveSupport::CurrentAttributes.clear_all
+        ActiveSupport::ExecutionContext.pop
+      end
+
+      Current.person = Person.new(7, "david", "Europe/Lisbon")
+
+      restoring_writes_isolated do
+        executor.wrap { assert_nil Current.person }
+        assert_equal "UTC", Time.zone.name
+      end
+
+      assert_equal "david", Current.person.name
+      assert_equal "Europe/Lisbon", Time.zone.name
+      assert_equal 7, Session.current
+      assert_nil Session.previous
+    end
+  end
+
   test "set and restore attributes when re-entering the executor" do
     ActiveSupport::ExecutionContext.with(nestable: true) do
       # simulate executor hooks from active_support/railtie.rb
@@ -366,4 +561,11 @@ class CurrentAttributesTest < ActiveSupport::TestCase
       assert_equal "account/1", Current.account
     end
   end
+
+  private
+    def restoring_writes_isolated(&block)
+      ActiveSupport::CurrentAttributes.restoring_writes do
+        ActiveSupport::ExecutionContext.isolated(&block)
+      end
+    end
 end

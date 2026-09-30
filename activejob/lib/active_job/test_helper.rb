@@ -613,6 +613,11 @@ module ActiveJob
     # to run at or before the given time will be performed. This includes jobs
     # that have been enqueued without a time.
     #
+    # When +config.active_job.isolate_inline_jobs+ is enabled, the jobs are
+    # performed with their own ActiveSupport::CurrentAttributes, and the test's
+    # are put back once each job finishes, through their attribute writers, as
+    # when a +Current.set+ block ends.
+    #
     # If queue_adapter_for_test is overridden to return a different adapter,
     # +perform_enqueued_jobs+ will merely execute the block.
     def perform_enqueued_jobs(only: nil, except: nil, queue: nil, at: nil, &block)
@@ -723,7 +728,7 @@ module ActiveJob
         enqueued_jobs_with(only: only, except: except, queue: queue, at: at) do |payload|
           queue_adapter.enqueued_jobs.delete(payload)
           queue_adapter.performed_jobs << payload
-          instantiate_job(payload, skip_deserialize_arguments: true).perform_now
+          ActiveJob.perform_inline { instantiate_job(payload, skip_deserialize_arguments: true).perform_now }
         end.count
       end
 

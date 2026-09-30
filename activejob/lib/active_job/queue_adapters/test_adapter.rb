@@ -52,7 +52,7 @@ module ActiveJob
         def perform_or_enqueue(perform, job, job_data)
           if perform
             performed_jobs << job_data
-            Base.execute(job.serialize)
+            execute_inline(job.serialize)
           else
             enqueued_jobs << job_data
           end

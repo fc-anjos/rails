@@ -100,10 +100,40 @@ module ActiveSupport
 
     NOT_SET = Object.new.freeze # :nodoc:
 
+    # Holds, while CurrentAttributes.restoring_writes runs, the attribute values
+    # the caller's instances had as the block started and those each instance
+    # created in the block was created with, and puts the caller's values back
+    # once it ends.
+    class Restoration # :nodoc:
+      def initialize(instances)
+        @instances = instances
+        @values = instances.transform_values { |instance| instance.__send__(:attribute_values) }
+        @created = nil
+      end
+
+      def created(key, instance)
+        (@created ||= []) << [key, instance, instance.__send__(:attribute_values)]
+      end
+
+      def restore
+        @created&.reverse_each do |key, instance, values|
+          if caller_values = @values[key]
+            @instances[key].__send__(:restore_attribute_values, caller_values, instance)
+          else
+            instance.__send__(:restore_attribute_values, values)
+          end
+        end
+
+        @values.each do |key, values|
+          @instances[key].__send__(:restore_attribute_values, values)
+        end
+      end
+    end
+
     class << self
       # Returns singleton instance for this class in this thread. If none exists, one is created.
       def instance
-        current_instances[current_instances_key] ||= new
+        current_instances[current_instances_key] ||= create_instance
       end
 
       # Declares one or more attributes that will be given both class and instance accessor methods.
@@ -163,6 +193,38 @@ module ActiveSupport
         end
       end
 
+      # Runs the block, and then puts back the attribute values the caller had
+      # as the block started, through the attribute writers, as a #set block
+      # does when it ends, so that writers with side effects, such as setting
+      # +Time.zone+, undo what the block's writes did. Nothing the block writes
+      # survives it, also when it raises.
+      #
+      # The block can run on the caller's instances, or on instances of its own
+      # inside ExecutionContext.isolated. Each instance the block used is compared
+      # with the caller's instance of its class, and the caller's writer is called,
+      # with the caller's value, for each attribute whose value is not the same
+      # object. An attribute the block only read is not written back, unless the
+      # block read it on an instance of its own that holds another value. A class
+      # the caller has no instance of is set back, through the writers of the
+      # block's instance, to the values that instance was created with, and the
+      # instance is discarded. No reset callbacks run, and a writer that cannot
+      # take the caller's value raises, as at the end of a #set block.
+      def restoring_writes # :nodoc:
+        instances = current_instances
+        restoration = Restoration.new(instances)
+        outer_restoration = IsolatedExecutionState[:active_support_current_attributes_restoration]
+        IsolatedExecutionState[:active_support_current_attributes_restoration] = restoration
+        ExecutionContext.current_attributes_instances = instances.dup
+
+        yield
+      ensure
+        if restoration
+          IsolatedExecutionState[:active_support_current_attributes_restoration] = outer_restoration
+          ExecutionContext.current_attributes_instances = instances
+          restoration.restore
+        end
+      end
+
       private
         def generated_attribute_methods
           @generated_attribute_methods ||= Module.new.tap { |mod| include mod }
@@ -174,6 +236,12 @@ module ActiveSupport
 
         def current_instances_key
           @current_instances_key ||= name.to_sym
+        end
+
+        def create_instance
+          instance = new
+          IsolatedExecutionState[:active_support_current_attributes_restoration]&.created(current_instances_key, instance)
+          instance
         end
 
         def method_missing(name, ...)
@@ -236,6 +304,32 @@ module ActiveSupport
     end
 
     private
+      def attribute_values
+        {}.update(@attributes)
+      end
+
+      # Calls the writer of each attribute whose value in +source+, this instance
+      # or one a block used in its place, is not the same object as in +values+,
+      # with the value in +values+.
+      def restore_attribute_values(values, source = self)
+        source.__send__(:attribute_names_changed_from, values)&.each do |name|
+          public_send("#{name}=", values[name])
+        end
+      end
+
+      def attribute_names_changed_from(values)
+        names = nil
+
+        @attributes.each do |name, value|
+          (names ||= []) << name unless values.key?(name) && values[name].equal?(value)
+        end
+        values.each_key do |name|
+          (names ||= []) << name unless @attributes.key?(name)
+        end
+
+        names
+      end
+
       def resolve_defaults
         defaults.each_with_object({}) do |(key, value), result|
           if value != NOT_SET

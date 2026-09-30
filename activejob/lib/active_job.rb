@@ -61,6 +61,31 @@ module ActiveJob
   singleton_class.attr_accessor :verbose_enqueue_logs
   self.verbose_enqueue_logs = false
 
+  ##
+  # :singleton-method: isolate_inline_jobs
+  #
+  # Specifies if jobs performed on the calling thread by the +:inline+ and
+  # +:test+ adapters, and by ActiveJob::TestHelper#perform_enqueued_jobs, run
+  # with their own ActiveSupport::CurrentAttributes and execution context, as
+  # they do when a queue performs them. The caller's are put back once the job
+  # finishes, and each attribute the job left with another value is set back
+  # through the caller's attribute writer, as when a +Current.set+ block ends.
+  # Defaults to false.
+  singleton_class.attr_accessor :isolate_inline_jobs
+  self.isolate_inline_jobs = false
+
+  # Runs the block, which performs a job on the calling thread, in an execution
+  # context of its own when isolate_inline_jobs is enabled.
+  def self.perform_inline(&block) # :nodoc:
+    if isolate_inline_jobs
+      ActiveSupport::CurrentAttributes.restoring_writes do
+        ActiveSupport::ExecutionContext.isolated(&block)
+      end
+    else
+      yield
+    end
+  end
+
   # Push many jobs onto the queue at once without running enqueue callbacks.
   # Queue adapters may communicate the enqueue status of each job by setting
   # successfully_enqueued and/or enqueue_error on the passed-in job instances.
