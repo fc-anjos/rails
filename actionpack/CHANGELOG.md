@@ -1,3 +1,40 @@
+*   Add `config.action_dispatch.action_on_unsafe_public_cache`.
+
+    Shared caches, such as CDNs and proxies, may serve a response marked
+    `Cache-Control: public` to every user. With this setting set to `:log` or
+    `:raise`, a public response that read the session, cookies, the flash, the
+    CSRF token or the content security policy nonce, or that sets a cookie, logs
+    a warning or raises `ActionDispatch::UnsafePublicCacheError`. The default is
+    `false`, which checks nothing.
+
+    ```ruby
+    config.action_dispatch.action_on_unsafe_public_cache = :raise
+
+    def show
+      expires_in 1.hour, public: true
+      render plain: "Hello #{session[:name]}" # raises ActionDispatch::UnsafePublicCacheError
+    end
+    ```
+
+    *Felipe Cavalheiro Anjos*
+
+*   Add the `read_input.action_dispatch` notification.
+
+    It is published each time the application reads the session, cookies, the
+    flash, the CSRF token or the content security policy nonce, with the input
+    and the session key, cookie name or flash key read. Reads that Rails makes
+    itself, such as loading and committing the session, verifying the CSRF token
+    or generating the nonce for the `Content-Security-Policy` header, are not
+    published. When nothing is subscribed, reads allocate nothing new.
+
+    ```ruby
+    ActiveSupport::Notifications.subscribe("read_input.action_dispatch") do |event|
+      event.payload # => { request: #<ActionDispatch::Request ...>, input: :session, key: "user_id" }
+    end
+    ```
+
+    *Felipe Cavalheiro Anjos*
+
 *   Report reads of inputs that a render through `ActionController::Renderer` was not given,
     and set back the `Current` attributes it writes.
 

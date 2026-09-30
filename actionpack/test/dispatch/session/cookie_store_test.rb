@@ -128,6 +128,25 @@ class CookieStoreTest < ActionDispatch::IntegrationTest
     end
   end
 
+  def test_session_reads_publish_read_input_events_without_the_session_cookie_read
+    with_test_route_set do
+      get "/set_session_value"
+
+      assert_equal [[:session, "foo"]], capture_reads { get "/get_session_value" }
+      assert_equal [[:session, "session_id"]], capture_reads { get "/persistent_session_id" }
+      assert_equal [[:session, "session_id"]], capture_reads { get "/get_session_id" }
+    end
+  end
+
+  def test_loading_and_committing_the_session_publishes_no_read_input_events
+    with_test_route_set do
+      assert_empty capture_reads { get "/set_session_value" }
+      assert_empty capture_reads { get "/set_session_value" }
+      assert_empty capture_reads { get "/renew_session_id" }
+      assert_empty capture_reads { get "/call_reset_session" }
+    end
+  end
+
   def test_disregards_tampered_sessions
     with_test_route_set do
       encryptor = ActiveSupport::MessageEncryptor.new("A" * 32, cipher: "aes-256-gcm", serializer: Marshal)

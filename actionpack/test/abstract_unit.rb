@@ -362,6 +362,49 @@ require "active_support/testing/method_call_assertions"
 
 class ActiveSupport::TestCase
   include ActiveSupport::Testing::MethodCallAssertions
+
+  private
+    # The input and key of each read_input.action_dispatch event the block publishes.
+    def capture_reads(&block)
+      capture_notifications("read_input.action_dispatch", &block).map { |event| event.payload.values_at(:input, :key) }
+    end
+end
+
+require "active_support/key_generator"
+require "active_support/messages/rotation_configuration"
+
+# For integration tests of a controller behind a cookie session store, whose
+# requests carry the configuration signed cookies need.
+module CookieSessionAppTestHelpers
+  private
+    # Runs the block with the actions of +controller+ routed at "/:action", on an
+    # app with a cookie session store and +middleware+ (a class and its
+    # arguments) before ActionDispatch::Cookies.
+    def with_cookie_session_app(controller, *middleware)
+      @app = self.class.build_app do |stack|
+        stack.insert_before ActionDispatch::Cookies, *middleware if middleware.any?
+        stack.use ActionDispatch::Session::CookieStore, key: "_session_id"
+      end
+
+      with_routing do |set|
+        set.draw do
+          ActionDispatch.deprecator.silence { get ":action", to: controller }
+        end
+
+        yield
+      end
+    end
+
+    attr_reader :app
+
+    def get(path, **options)
+      options[:headers] ||= {}
+      options[:headers]["action_dispatch.key_generator"] ||= ActiveSupport::KeyGenerator.new("b3c631c314c0bbca50c1b2843150fe33", iterations: 1000)
+      options[:headers]["action_dispatch.cookies_rotations"] ||= ActiveSupport::Messages::RotationConfiguration.new
+      options[:headers]["action_dispatch.signed_cookie_salt"] ||= "signed cookie"
+      options[:headers]["action_dispatch.show_exceptions"] ||= :none
+      super
+    end
 end
 
 module CookieAssertions

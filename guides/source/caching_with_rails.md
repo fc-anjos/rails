@@ -627,6 +627,14 @@ class HomeController < ApplicationController
 end
 ```
 
+A public response must be the same for every user, and must not set cookies.
+To have Rails check this, set
+[`config.action_dispatch.action_on_unsafe_public_cache`](configuring.html#config-action-dispatch-action-on-unsafe-public-cache)
+to `:log` or `:raise`. Rails then reports a response marked public that read
+the session, cookies, the flash, the CSRF token or the content security policy
+nonce, directly or through a helper method such as `current_user`, or that
+sets a cookie.
+
 ### SQL Caching
 
 Query caching is an Active Record feature that caches the result set returned by

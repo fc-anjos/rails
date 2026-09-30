@@ -4046,6 +4046,29 @@ module ApplicationTests
       assert_not ActionDispatch.verbose_redirect_logs
     end
 
+    test "config.action_dispatch.action_on_unsafe_public_cache is false by default and subscribes to nothing" do
+      app "development"
+
+      assert_equal false, Rails.application.env_config["action_dispatch.action_on_unsafe_public_cache"]
+      assert_not ActiveSupport::Notifications.notifier.listening?("read_input.action_dispatch")
+    end
+
+    test "config.action_dispatch.action_on_unsafe_public_cache reaches the env config and records input reads" do
+      add_to_config "config.action_dispatch.action_on_unsafe_public_cache = :raise"
+
+      app "development"
+
+      assert_equal :raise, Rails.application.env_config["action_dispatch.action_on_unsafe_public_cache"]
+      assert ActiveSupport::Notifications.notifier.listening?("read_input.action_dispatch")
+    end
+
+    test "config.action_dispatch.action_on_unsafe_public_cache rejects values other than false, :log and :raise" do
+      add_to_config "config.action_dispatch.action_on_unsafe_public_cache = true"
+
+      error = assert_raises(ArgumentError) { app "development" }
+      assert_equal "config.action_dispatch.action_on_unsafe_public_cache must be false, :log or :raise, got true", error.message
+    end
+
     test "Rails.application.config.action_mailer.smtp_settings have open_timeout and read_timeout defined as 5 in 7.0 defaults" do
       remove_from_config '.*config\.load_defaults.*\n'
       add_to_config <<-RUBY

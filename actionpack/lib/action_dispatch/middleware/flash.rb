@@ -57,10 +57,11 @@ module ActionDispatch
       def flash
         flash = flash_hash
         return flash if flash
-        self.flash = Flash::FlashHash.from_session_value(session["flash"])
+        self.flash = Flash::FlashHash.from_session_value(reading_for_framework { session["flash"] })
       end
 
       def flash=(flash)
+        flash&.request = self
         set_header Flash::KEY, flash
       end
 
@@ -71,13 +72,15 @@ module ActionDispatch
       def commit_flash # :nodoc:
         return unless session.enabled?
 
-        if flash_hash && (flash_hash.present? || session.key?("flash"))
-          session["flash"] = flash_hash.to_session_value
-          self.flash = flash_hash.dup
-        end
+        reading_for_framework do
+          if flash_hash && (flash_hash.present? || session.key?("flash"))
+            session["flash"] = flash_hash.to_session_value
+            self.flash = flash_hash.dup
+          end
 
-        if session.loaded? && session.key?("flash") && session["flash"].nil?
-          session.delete("flash")
+          if session.loaded? && session.key?("flash") && session["flash"].nil?
+            session.delete("flash")
+          end
         end
       end
 
@@ -95,9 +98,7 @@ module ActionDispatch
       end
 
       def []=(k, v)
-        k = k.to_s
-        @flash[k] = v
-        @flash.discard(k)
+        @flash.set_now(k.to_s, v)
         v
       end
 
@@ -118,6 +119,10 @@ module ActionDispatch
 
     class FlashHash
       include Enumerable
+
+      # Reads of this flash publish `read_input.action_dispatch` events for the
+      # request.
+      attr_writer :request # :nodoc:
 
       def self.from_session_value(value) # :nodoc:
         case value
@@ -167,7 +172,15 @@ module ActionDispatch
       end
 
       def [](k)
+        @request&.instrument_read_input(:flash, k)
         @flashes[k.to_s]
+      end
+
+      # Sets a flash for the current action only. Unlike `discard(k)`, it does not
+      # read the flash back, so setting `flash.now[k]` is not published as a read.
+      def set_now(k, v) # :nodoc:
+        self[k] = v
+        @discard << k
       end
 
       def update(h) # :nodoc:
@@ -177,10 +190,12 @@ module ActionDispatch
       end
 
       def keys
+        @request&.instrument_read_input(:flash)
         @flashes.keys
       end
 
       def key?(name)
+        @request&.instrument_read_input(:flash, name)
         @flashes.key? name.to_s
       end
 
@@ -194,10 +209,12 @@ module ActionDispatch
       end
 
       def to_hash
+        @request&.instrument_read_input(:flash)
         @flashes.dup
       end
 
       def empty?
+        @request&.instrument_read_input(:flash)
         @flashes.empty?
       end
 
@@ -207,6 +224,7 @@ module ActionDispatch
       end
 
       def each(&block)
+        @request&.instrument_read_input(:flash)
         @flashes.each(&block)
       end
 

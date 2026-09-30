@@ -2767,6 +2767,25 @@ This defaults to `true` in `development`, and `false` in all other environments.
 
 Specifies if source locations of redirects should be logged below relevant log lines. By default, the flag is `true` in development and `false` in all other environments.
 
+#### `config.action_dispatch.action_on_unsafe_public_cache`
+
+Controls what happens when a response marked `Cache-Control: public` read the session, cookies, the flash, the CSRF token or the content security policy nonce, or sets a cookie. Shared caches, such as CDNs and proxies, may store a public response and serve it to every user, so such a response can show one user's data, or give one user's cookies, to others.
+
+When set to `:log`, Rails logs a warning naming the request, what it read and the cookies it sets. When set to `:raise`, Rails raises an `ActionDispatch::UnsafePublicCacheError`. When set to `false` (the default), nothing is checked. Any other value raises an `ArgumentError` when the application boots.
+
+```ruby
+config.action_dispatch.action_on_unsafe_public_cache = :raise
+
+class ProductsController < ApplicationController
+  def show
+    expires_in 1.hour, public: true
+    render plain: "Hello #{session[:name]}" # raises ActionDispatch::UnsafePublicCacheError
+  end
+end
+```
+
+The reads are the [`read_input.action_dispatch`](active_support_instrumentation.html#read-input-action-dispatch) notifications published while the request is processed, so reads Rails makes itself are not counted. The check runs in the `ActionDispatch::Cookies` middleware, so applications without it, such as API-only applications, are not checked. It runs when the response is returned to that middleware, so reads made later, while a streamed body is written with `ActionController::Live` or `render stream: true`, are not counted.
+
 #### `ActionDispatch::Callbacks.before`
 
 Takes a block of code to run before the request.

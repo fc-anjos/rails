@@ -518,7 +518,41 @@ module ActionDispatch
       controller_instance.commit_csrf_token(self) if controller_instance.respond_to?(:commit_csrf_token)
     end
 
+    READ_INPUT_EVENT = "read_input.action_dispatch" # :nodoc:
+    READING_FOR_FRAMEWORK = "action_dispatch.reading_for_framework" # :nodoc:
+
+    # Publishes a `read_input.action_dispatch` event for a read of request state,
+    # unless nobody is listening or the framework is making the read.
+    def instrument_read_input(input, key = nil) # :nodoc:
+      if ActiveSupport::Notifications.notifier.listening?(READ_INPUT_EVENT) && !reading_for_framework?
+        ActiveSupport::Notifications.instrument(READ_INPUT_EVENT, request: self, input: input, key: key&.to_s)
+      end
+    end
+
+    # Reads made in the block, such as loading the session or verifying the CSRF
+    # token, are the framework's own and publish no `read_input.action_dispatch`
+    # events. The mark names the thread or fiber running the block, so reads that
+    # another thread makes for the same request meanwhile, such as an
+    # ActionController::Live action streaming while the session is committed, are
+    # still published.
+    def reading_for_framework # :nodoc:
+      if ActiveSupport::Notifications.notifier.listening?(READ_INPUT_EVENT) && !reading_for_framework?
+        set_header(READING_FOR_FRAMEWORK, ActiveSupport::IsolatedExecutionState.context)
+        begin
+          yield
+        ensure
+          delete_header(READING_FOR_FRAMEWORK) if reading_for_framework?
+        end
+      else
+        yield
+      end
+    end
+
     private
+      def reading_for_framework?
+        get_header(READING_FOR_FRAMEWORK).equal?(ActiveSupport::IsolatedExecutionState.context)
+      end
+
       def check_method(name)
         if name
           HTTP_METHOD_LOOKUP[name] || raise(ActionController::UnknownHttpMethod, "#{name}, accepted HTTP methods are #{HTTP_METHODS.to_sentence(locale: false)}")

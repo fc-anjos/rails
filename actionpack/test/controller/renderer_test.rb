@@ -122,6 +122,14 @@ class RendererTest < ActiveSupport::TestCase
     assert_equal value, content
   end
 
+  test "reads of a session, cookies and flash a render was not given publish read_input events" do
+    reads = capture_reads do
+      render(inline: "<%= session[:user_id].inspect %> <%= cookies[:theme].inspect %> <%= flash[:notice].inspect %>")
+    end
+
+    assert_equal [[:session, "user_id"], [:cookies, "theme"], [:flash, "notice"]], reads
+  end
+
   test "rendering with defaults" do
     renderer = ApplicationController.renderer.new https: true
     content = renderer.render inline: "<%= request.ssl? %>"

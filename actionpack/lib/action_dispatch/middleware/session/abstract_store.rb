@@ -69,8 +69,10 @@ module ActionDispatch
 
     module SessionObject # :nodoc:
       def commit_session(req, res)
-        req.commit_csrf_token
-        super(req, res)
+        req.reading_for_framework do
+          req.commit_csrf_token
+          super(req, res)
+        end
       end
 
       def prepare_session(req)
