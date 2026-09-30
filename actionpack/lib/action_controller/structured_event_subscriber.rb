@@ -86,6 +86,19 @@ module ActionController
       )
     end
 
+    def unprovided_renderer_input(event)
+      payload = event.payload
+
+      emit_event("action_controller.unprovided_renderer_input",
+        input: payload[:input],
+        key: payload[:key],
+        controller: payload[:controller]&.class&.name,
+        action: payload[:controller]&.action_name,
+        message: payload[:message],
+        stacktrace: payload[:stack_trace],
+      )
+    end
+
     def unpermitted_parameters(event)
       unpermitted_keys = event.payload[:keys]
       context = event.payload[:context]

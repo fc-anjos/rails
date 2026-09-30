@@ -50,6 +50,10 @@ module ActionController
         def open_redirector
           redirect_to "example.com"
         end
+
+        def render_reading_session
+          render plain: ApplicationController.render(inline: "<%= session[:user_id].inspect %>")
+        end
       end
     end
 
@@ -209,6 +213,22 @@ module ActionController
         end
 
         assert(event[:payload][:stacktrace].find { |line| line.include?("structured_event_subscriber_test.rb:51") })
+      end
+    end
+
+    def test_unprovided_renderer_input
+      ActionController::Base.with(action_on_unprovided_renderer_input: :notify) do
+        event = assert_event_reported("action_controller.unprovided_renderer_input", payload: {
+          input: :session,
+          key: "user_id",
+          controller: Another::StructuredEventSubscribersController.name,
+          action: "render_reading_session"
+        }) do
+          get :render_reading_session
+        end
+
+        assert_match "`session[:user_id]` was read by a render", event[:payload][:message]
+        assert(event[:payload][:stacktrace].find { |line| line.include?("inline template") })
       end
     end
   end

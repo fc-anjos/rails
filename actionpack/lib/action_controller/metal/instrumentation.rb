@@ -58,6 +58,7 @@ module ActionController
     private
       def process_action(*)
         ActiveSupport::ExecutionContext[:controller] = self
+        @_set_blocks_opened_before_action = ActiveSupport::CurrentAttributes.opened_set_blocks
 
         raw_payload = {
           controller: self.class.name,
@@ -83,6 +84,16 @@ module ActionController
         ensure
           append_info_to_payload(payload)
         end
+      end
+
+      # The number of `Current.set` blocks opened on the thread or fiber before the
+      # action method is called, or, until it is, before the controller started
+      # processing the action (see ActiveSupport::CurrentAttributes.opened_set_blocks).
+      # The ones still open were opened around the action, by a middleware or an
+      # `around_action`, and hold the request's state, so they do not provide their
+      # attributes to renders through ActionController::Renderer, which reads this.
+      def set_blocks_opened_before_action # :nodoc:
+        @_set_blocks_opened_before_action
       end
 
       # A hook invoked every time a before callback is halted.

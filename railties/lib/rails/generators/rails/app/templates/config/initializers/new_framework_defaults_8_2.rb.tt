@@ -69,6 +69,41 @@
 # Rails.application.config.action_controller.default_protect_from_forgery_with = :exception
 
 ###
+# Raise when a render through `ActionController::Renderer` reads an input it was
+# not given.
+#
+# `ApplicationController.render` and Turbo Stream broadcasts render outside of
+# a request, and their output may be sent to other users. Such a render reads
+# `nil` from a session, cookies or flash that were not passed in its env, so a
+# partial calling `current_user` or `authenticated?` renders its signed-out
+# markup. Made while a request or an Action Cable command is being processed, it
+# reads the `Current` attributes set for it, so a partial reading `Current.user`
+# in a broadcast made from an action renders it for the user who made the
+# request, and sends that HTML to every subscriber. Pass the values the render
+# needs as locals, or provide `Current` attributes with
+# `Current.set(user: ...) { ... }` around the render.
+#
+# The previous default, `:log`, logs a warning for each such read and keeps the
+# value read. Set it to `:notify` to receive an
+# `unprovided_renderer_input.action_controller` notification with a stack trace
+# for each one, to find the renders to change before switching to `:raise`.
+#++
+# Rails.application.config.action_controller.action_on_unprovided_renderer_input = :raise
+
+###
+# Set back the `Current` attributes a render through `ActionController::Renderer`
+# writes when the render ends.
+#
+# A helper method that memoizes a value, like
+# `Current.account ||= Current.user.account`, writes `Current` in every render
+# that calls it. With the previous default, `false`, that value stays set after
+# the render, so an action or a job that renders a partial once per recipient,
+# inside `Current.set(user: recipient) { ... }`, renders every recipient after
+# the first with the first one's account, and reads that account afterwards.
+#++
+# Rails.application.config.action_controller.renderer_restores_current_attributes = true
+
+###
 # Remove the default X-XSS-Protection headers since all browsers have removed support for it years ago.
 #++
 # config.action_dispatch.default_headers = {

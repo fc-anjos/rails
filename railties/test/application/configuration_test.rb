@@ -1651,6 +1651,70 @@ module ApplicationTests
       assert_equal :log, ActionController::Base.action_on_open_redirect
     end
 
+    test "ActionController::Base.action_on_unprovided_renderer_input is :log with 8.1 defaults" do
+      remove_from_config '.*config\.load_defaults.*\n'
+      add_to_config 'config.load_defaults "8.1"'
+
+      app "development"
+
+      assert_equal :log, ActionController::Base.action_on_unprovided_renderer_input
+      assert_equal :log, ActionController::API.action_on_unprovided_renderer_input
+    end
+
+    test "ActionController::Base.action_on_unprovided_renderer_input is :raise with 8.2 defaults" do
+      remove_from_config '.*config\.load_defaults.*\n'
+      add_to_config 'config.load_defaults "8.2"'
+
+      app "development"
+
+      assert_equal :raise, ActionController::Base.action_on_unprovided_renderer_input
+      assert_equal :raise, ActionController::API.action_on_unprovided_renderer_input
+    end
+
+    test "ActionController::Base.action_on_unprovided_renderer_input can be set via new framework defaults" do
+      remove_from_config '.*config\.load_defaults.*\n'
+      add_to_config 'config.load_defaults "8.1"'
+      app_file "config/initializers/new_framework_defaults_8_2.rb", <<-RUBY
+        Rails.application.config.action_controller.action_on_unprovided_renderer_input = :raise
+      RUBY
+
+      app "development"
+
+      assert_equal :raise, ActionController::Base.action_on_unprovided_renderer_input
+    end
+
+    test "ActionController::Base.renderer_restores_current_attributes is false with 8.1 defaults" do
+      remove_from_config '.*config\.load_defaults.*\n'
+      add_to_config 'config.load_defaults "8.1"'
+
+      app "development"
+
+      assert_equal false, ActionController::Base.renderer_restores_current_attributes
+      assert_equal false, ActionController::API.renderer_restores_current_attributes
+    end
+
+    test "ActionController::Base.renderer_restores_current_attributes is true with 8.2 defaults" do
+      remove_from_config '.*config\.load_defaults.*\n'
+      add_to_config 'config.load_defaults "8.2"'
+
+      app "development"
+
+      assert_equal true, ActionController::Base.renderer_restores_current_attributes
+      assert_equal true, ActionController::API.renderer_restores_current_attributes
+    end
+
+    test "ActionController::Base.renderer_restores_current_attributes can be set via new framework defaults" do
+      remove_from_config '.*config\.load_defaults.*\n'
+      add_to_config 'config.load_defaults "8.1"'
+      app_file "config/initializers/new_framework_defaults_8_2.rb", <<-RUBY
+        Rails.application.config.action_controller.renderer_restores_current_attributes = true
+      RUBY
+
+      app "development"
+
+      assert_equal true, ActionController::Base.renderer_restores_current_attributes
+    end
+
     test "config.action_dispatch.show_exceptions is sent in env" do
       make_basic_app do |application|
         application.config.action_dispatch.show_exceptions = :all

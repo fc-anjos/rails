@@ -61,8 +61,10 @@ Below are the default values associated with each target version. In cases of co
 #### Default Values for Target Version 8.2
 
 - [`ActiveSupport.raise_on_invalid_time_zone_parse`](#activesupport-raise-on-invalid-time-zone-parse): `true`
+- [`config.action_controller.action_on_unprovided_renderer_input`](#config-action-controller-action-on-unprovided-renderer-input): `:raise`
 - [`config.action_controller.default_protect_from_forgery_with`](#config-action-controller-default-protect-from-forgery-with): `:exception`
 - [`config.action_controller.forgery_protection_verification_strategy`](#config-action-controller-forgery-protection-verification-strategy): `:header_only`
+- [`config.action_controller.renderer_restores_current_attributes`](#config-action-controller-renderer-restores-current-attributes): `true`
 - [`config.action_controller.rescue_from_event_backtrace`](#config-action-controller-rescue-from-event-backtrace): `:array`
 - [`config.action_dispatch.default_headers`](#config-action-dispatch-default-headers): `{ "X-Frame-Options" => "SAMEORIGIN", "X-Content-Type-Options" => "nosniff", "X-Permitted-Cross-Domain-Policies" => "none", "Referrer-Policy" => "strict-origin-when-cross-origin" }`
 - [`config.action_dispatch.strict_accept_header`](#config-action-dispatch-strict-accept-header): `true`
@@ -2254,6 +2256,114 @@ The default value depends on the `config.load_defaults` target version:
 | (original)            | `:log`               |
 | 8.1                   | `:raise`             |
 
+#### `config.action_controller.action_on_unprovided_renderer_input`
+
+Controls how Rails handles a render through `ActionController::Renderer`, such
+as `ApplicationController.render` or a Turbo Stream broadcast, that reads an
+input it was not given.
+
+Such a render is not part of a request, and its output may be sent to other
+users. It is given a session, cookies and a flash only when they are passed in
+the renderer's env (the flash is read from the session), and otherwise reads
+`nil` from them, including through helper methods such as a `current_user` that
+reads `session[:user_id]`. Its request has no key generator, so
+`cookies.signed` and `cookies.encrypted` raise `NoMethodError`. When it is made while a controller is processing an
+action, or an Action Cable channel a command, it runs with the request's
+`ActiveSupport::CurrentAttributes`, and it is given an attribute set for the
+request only while a `Current.set` block naming it is open. A block still open
+when the action method is called (for a channel, the action method,
+`subscribed` or `unsubscribed`), opened by a middleware, an `around_action` or
+an `around_command`, holds the request's state and does not count; one opened
+in the action, in a `before_action` or `after_action`, or in a model callback
+during the action does. Before the action method is called, such a block is not
+yet told apart from one opened around a render, so a render made in a
+`before_action` inside an `around_action`'s block, or in the `around_action`
+before it yields, is given its attributes. Attributes still at their default,
+and values the render writes itself, are not reported. A value an earlier render
+wrote is reported as the request's when
+[`config.action_controller.renderer_restores_current_attributes`](#config-action-controller-renderer-restores-current-attributes)
+is disabled, since it stays set after that render. Renders made outside of a
+controller action or a channel command, for example in a job, in a middleware
+before the controller, or in a mounted Rack application, are not checked for
+`Current` attributes.
+
+Pass the values the render needs as locals, or wrap the render in
+`Current.set(user: ...) { ... }` with the values it is meant to see:
+
+```ruby
+ApplicationController.render(partial: "messages/message", locals: { message: message })
+
+Current.set(user: nil) do
+  ApplicationController.render(partial: "messages/message", locals: { message: message })
+end
+```
+
+When set to `:log`, Rails logs a warning once per render and input. When set to
+`:notify`, Rails publishes an `unprovided_renderer_input.action_controller`
+notification event once per render and input, with the input (`:session`,
+`:cookies`, `:flash` or `:current_attributes`), the key read, the controller
+processing an action if any, a message and the stack trace of the read, and
+reports an `action_controller.unprovided_renderer_input` structured event. In
+both cases the render reads what it reads when the setting is `false`. When set to
+`:raise`, Rails raises an `ActionController::Renderer::UnprovidedInputError` on
+every such read; in a template, it reaches the caller as an
+`ActionView::Template::Error` naming the template and line. When set to
+`false`, reads are not checked. A read of `cookies.signed` or
+`cookies.encrypted` by a render that was not given cookies is reported before
+it raises `NoMethodError`.
+
+Writes are not reported: session writes raise as they do in a request without a
+session store, and cookies and flash messages the render sets read back. Forms,
+`button_to` and `csrf_meta_tags` render without an authenticity token, and read
+nothing. What happens to the `Current` attributes a render writes is decided by
+[`config.action_controller.renderer_restores_current_attributes`](#config-action-controller-renderer-restores-current-attributes).
+
+The default value depends on the `config.load_defaults` target version:
+
+| Starting with version | The default value is |
+| --------------------- | -------------------- |
+| (original)            | `:log`               |
+| 8.2                   | `:raise`             |
+
+
+#### `config.action_controller.renderer_restores_current_attributes`
+
+Determines whether a render through `ActionController::Renderer`, such as
+`ApplicationController.render` or a Turbo Stream broadcast, sets back the
+`ActiveSupport::CurrentAttributes` it writes when it ends.
+
+A render can write `Current` attributes, for example through a helper method
+that memoizes a value with `Current.account ||= Current.user.account`. When this is
+`true`, each attribute the render wrote gets the value it held when the render
+started, also when the render raises. The value is set through the attribute's
+writer, as when a `Current.set` block ends, so a writer with side effects, such
+as setting `Time.zone`, runs again with the value it is set back to. A `Current`
+class first used in the render is set back to its defaults through its writers,
+and its instance is discarded. No reset callbacks run. Jobs performed inline set
+back their writes the same way, with
+[`config.active_job.isolate_inline_jobs`](#config-active-job-isolate-inline-jobs).
+Each render then reads the `Current` attributes its caller provides, and not
+those an earlier render wrote:
+
+```ruby
+recipients.map do |user|
+  Current.set(user: user) do
+    ApplicationController.render(partial: "messages/message", locals: { message: message })
+  end
+end
+```
+
+When this is `false`, the attributes a render writes stay set after it, for its
+caller and for every later render on the same thread, so a partial calling such a
+helper method renders every recipient after the first with the first one's
+account.
+
+The default value depends on the `config.load_defaults` target version:
+
+| Starting with version | The default value is |
+| --------------------- | -------------------- |
+| (original)            | `false`              |
+| 8.2                   | `true`               |
 
 #### `config.action_controller.log_query_tags_around_actions`
 

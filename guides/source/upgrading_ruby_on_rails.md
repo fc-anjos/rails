@@ -142,6 +142,124 @@ To keep the previous behavior, set:
 Rails.application.config.active_job.isolate_inline_jobs = false
 ```
 
+### Renders through `ActionController::Renderer` raise when they read an input they were not given
+
+A render through `ActionController::Renderer`, such as `ApplicationController.render`
+or a Turbo Stream broadcast, is not part of a request, and its output may be sent
+to other users. It has a session, cookies and a flash only when they are passed in
+the renderer's env, and reads `nil` from them otherwise. Made while a controller is
+processing an action, it runs with that request's
+`ActiveSupport::CurrentAttributes`. For example, this broadcast renders
+`messages/_message.html.erb` with the `Current.user` of the user who posted the
+message, and sends the result to every subscriber of the room, while the same
+broadcast made from a job renders the partial as if nobody were signed in:
+
+```ruby
+class MessagesController < ApplicationController
+  def create
+    @message = @room.messages.create!(message_params)
+    @message.broadcast_append_to @room
+  end
+end
+```
+
+```erb
+<%# app/views/messages/_message.html.erb %>
+<%= message.body %>
+<% if Current.user.admin? %>
+  <%= button_to "Delete", message, method: :delete %>
+<% end %>
+<% if authenticated? %>
+  <%= link_to "Reply", new_message_reply_path(message) %>
+<% end %>
+```
+
+With the 8.2 framework defaults, such a render raises an
+`ActionController::Renderer::UnprovidedInputError` naming what it read and the
+template line when it reads a session, cookies or a flash it was not given, or a
+`Current` attribute that the request set and that was not provided to the render.
+With the previous default, `:log`, Rails logs a warning and the read returns
+`nil` from the session, cookies and flash, and the request's value for a
+`Current` attribute. `cookies.signed` and `cookies.encrypted` raise
+`NoMethodError` in these renders, as before; the read is now reported first, and
+with `:raise` it raises `UnprovidedInputError` instead.
+
+Pass the values the render needs as locals, or wrap the render in a
+`Current.set` block. A `Current` attribute is provided while a `Current.set`
+block naming it is open:
+
+```ruby
+Current.set(user: nil) do
+  @message.broadcast_append_to @room
+end
+```
+
+This applies to every `Current` class, including those of libraries. With
+`acts_as_tenant`, whose tenant is a `Current` attribute, render for the tenant
+with `ActsAsTenant.with_tenant(tenant) { ... }`, which is a `Current.set` block.
+An application that sets `ActiveStorage::Current.url_options` from the request
+(for the Disk service) and renders blob URLs in a broadcast provides them with
+`ActiveStorage::Current.set(url_options: ...) { ... }`. A render whose output
+goes back to the user who made the request, such as a PDF built with
+`ApplicationController.render`, can use the controller's `render_to_string`
+instead.
+
+A `Current.set` block that is still open when the action method is called,
+opened by an `around_action` or a middleware, holds the request's state like an
+assignment in a `before_action`, and does not provide its attributes: wrap the
+render itself. A render made in a `before_action` that runs inside such a block,
+or in the `around_action` before it yields, is still given its attributes.
+Renders made during an Action Cable channel command are checked the same way: a
+`Current.set` block an `around_command` opens, as its documentation shows, holds
+the state of the user who sent the command. `ActionCable::Channel::TestCase`
+checks `subscribe` and `perform` as commands too, so a channel test that assigns
+a `Current` attribute and performs an action whose render reads it raises, as
+that render would in production with the attribute set by an `around_command`.
+Provide the attribute where the render is made, with `Current.set` or as a
+local, or, if the application does not set it during commands, stop assigning
+it in the test. Renders made outside of a controller action or a channel
+command, for example in a job performed by a queue, are not checked for
+`Current` attributes.
+
+To find the renders to change before switching, set the option to `:notify` and
+subscribe to `unprovided_renderer_input.action_controller`, whose payload
+includes a stack trace. To keep the previous behavior, set:
+
+```ruby
+Rails.application.config.action_controller.action_on_unprovided_renderer_input = :log
+```
+
+### Renders through `ActionController::Renderer` set back the `Current` attributes they write
+
+A render through `ActionController::Renderer` can write `Current` attributes,
+for example through a helper method that memoizes a value derived from another
+attribute:
+
+```ruby
+def current_account
+  Current.account ||= Current.user.account
+end
+```
+
+With the 8.2 framework defaults, each attribute a render writes is set back to
+the value it held when the render started, once the render ends, through the
+attribute's writer, as when a `Current.set` block ends. Previously, the value
+stayed set: an action or a job that rendered a partial calling `current_account`
+once per recipient, inside `Current.set(user: recipient) { ... }`, rendered
+every recipient after the first with the first one's account, and the action or
+job read the first recipient's `Current.account` afterwards.
+
+Code that relied on a render's writes reaching its caller should set the
+attributes before the render instead. A writer must accept the value it is set
+back to, as it must for `Current.set`: a writer that dereferences its argument,
+like `self.account = user.account`, raises when it is set back to `nil`.
+
+To keep the previous behavior, set:
+
+```ruby
+Rails.application.config.action_controller.renderer_restores_current_attributes = false
+```
+
 ### The old Active Record 6.1 marshalling format was removed.
 
 If your application still sets `active_record.marshalling_format_version = 6.1`, which may

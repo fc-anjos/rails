@@ -1,3 +1,55 @@
+*   Report reads of inputs that a render through `ActionController::Renderer` was not given,
+    and set back the `Current` attributes it writes.
+
+    `ApplicationController.render` and Turbo Stream broadcasts render outside of a
+    request, and their output may be sent to other users.
+    `config.action_controller.action_on_unprovided_renderer_input` decides what
+    happens when such a render reads an input it was not given: a session, cookies
+    or a flash not passed in its env, or, when it is made while a controller is
+    processing an action or an Action Cable channel a command, a `Current`
+    attribute set for the request that no `Current.set` block opened during the
+    action provides. A block still open when the action method is called, such
+    as one opened by a middleware, an `around_action` or an `around_command`,
+    holds the request's state and provides nothing. `:log` (the default) logs a
+    warning and `:notify` publishes an
+    `unprovided_renderer_input.action_controller` notification and an
+    `action_controller.unprovided_renderer_input` structured event, once per
+    render and input, and both return what the render reads without the setting.
+    `:raise` raises `ActionController::Renderer::UnprovidedInputError`, and
+    `false` checks nothing. New applications raise, through
+    `config.load_defaults "8.2"`. A read of `cookies.signed` or `cookies.encrypted`,
+    which raises `NoMethodError: undefined method 'generate_key' for nil` in such a
+    render, is reported before it raises. Pass what the render needs as locals, or
+    wrap it in a `Current.set` block.
+
+    `config.action_controller.renderer_restores_current_attributes` sets back the
+    `Current` attributes such a render writes, such as `Current.account` memoized
+    by a helper method, when the render ends, through each attribute's writer, as
+    when a `Current.set` block ends and as `config.active_job.isolate_inline_jobs`
+    does for jobs performed inline. Without it, a value one render writes is read
+    by its caller and by every later render on the same thread, so rendering a
+    partial for several recipients renders all of them with what the first one
+    wrote. It is
+    enabled by `config.load_defaults "8.2"`.
+
+    ```ruby
+    # In an action, while Current.user is the signed-in user:
+    message.broadcast_append_to room # raises if the partial reads Current.user or session[:user_id]
+
+    Current.set(user: nil) do
+      message.broadcast_append_to room # renders the partial with no user
+    end
+
+    # With renderer_restores_current_attributes, each render reads its own account
+    recipients.map do |user|
+      Current.set(user: user) do
+        ApplicationController.render(partial: "messages/message", locals: { message: message })
+      end
+    end
+    ```
+
+    *Felipe Cavalheiro Anjos*
+
 *   Fix `Server-Timing` durations for nested same-name notifications.
 
     Nested events such as `render_partial.action_view` report inclusive

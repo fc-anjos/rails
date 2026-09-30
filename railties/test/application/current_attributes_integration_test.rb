@@ -55,6 +55,35 @@ class CurrentAttributesIntegrationTest < ActiveSupport::TestCase
           RecordCustomerJob.perform_later
           render :index
         end
+
+        def render_in_inline_job
+          Current.customer = Customer.new("david")
+          RenderCustomerJob.perform_later
+          render :index
+        end
+
+        def render_with_renderer
+          Current.customer = Customer.new("david")
+          render plain: ApplicationController.render(partial: "customers/customer")
+        rescue ActionView::Template::Error => error
+          render plain: error.cause.class.name
+        end
+      end
+    RUBY
+
+    app_file "app/models/message.rb", <<-RUBY
+      class Message < ActiveRecord::Base
+        attr_accessor :rendered
+
+        after_create_commit do
+          self.rendered = self.class.render_customer
+        end
+
+        def self.render_customer
+          ApplicationController.render(partial: "customers/customer").strip
+        rescue ActionView::Template::Error => error
+          error.cause.class.name
+        end
       end
     RUBY
 
@@ -66,6 +95,43 @@ class CurrentAttributesIntegrationTest < ActiveSupport::TestCase
           customers << Current.customer&.name
         end
       end
+    RUBY
+
+    app_file "app/channels/application_cable/connection.rb", <<-RUBY
+      module ApplicationCable
+        class Connection < ActionCable::Connection::Base
+          around_command :set_current_customer
+
+          private
+            def set_current_customer(&)
+              Current.set(customer: Customer.new("david"), &)
+            end
+        end
+      end
+    RUBY
+
+    app_file "app/channels/messages_channel.rb", <<-RUBY
+      class MessagesChannel < ActionCable::Channel::Base
+        cattr_accessor :rendered, default: []
+
+        def speak
+          rendered << Message.create!.rendered
+        end
+      end
+    RUBY
+
+    app_file "app/jobs/render_customer_job.rb", <<-RUBY
+      class RenderCustomerJob < ActiveJob::Base
+        cattr_accessor :rendered, default: []
+
+        def perform
+          rendered << ApplicationController.render(partial: "customers/customer")
+        end
+      end
+    RUBY
+
+    app_file "app/views/customers/_customer.html.erb", <<-RUBY
+      <%= Current.customer&.name || 'noone' %>
     RUBY
 
     add_to_config "config.active_job.queue_adapter = :inline"
@@ -127,7 +193,49 @@ class CurrentAttributesIntegrationTest < ActiveSupport::TestCase
     assert_equal "Copenhagen", Time.zone.name
   end
 
+  test "a render through the renderer during a request raises when it reads the request's current attributes" do
+    boot_app "8.2"
+
+    get "/customers/render_with_renderer"
+
+    assert_equal 200, last_response.status
+    assert_equal "ActionController::Renderer::UnprovidedInputError", last_response.body
+  end
+
+  test "a render through the renderer during a channel action raises when it reads what an around_command's set block holds" do
+    boot_app "8.2"
+    Message.lease_connection.create_table(:messages)
+
+    perform_channel_action "speak"
+
+    assert_equal ["ActionController::Renderer::UnprovidedInputError"], MessagesChannel.rendered
+  end
+
+  test "a render in a job performed inline during a request is not checked against the request" do
+    boot_app "8.2"
+
+    get "/customers/render_in_inline_job"
+
+    assert_equal 200, last_response.status
+    assert_match(/david,Copenhagen/, last_response.body)
+    assert_equal ["noone"], RenderCustomerJob.rendered.map(&:strip)
+  end
+
   private
+    # Subscribes to MessagesChannel and performs +action+, each command through
+    # the Action Cable worker pool, as the server processes it.
+    def perform_channel_action(action)
+      server = ActionCable.server
+      env = Rack::MockRequest.env_for("/cable", "HTTP_HOST" => "localhost", "HTTP_CONNECTION" => "upgrade", "HTTP_UPGRADE" => "websocket")
+      connection = ApplicationCable::Connection.new(server, ActionCable::Server::Socket.new(server, env))
+      identifier = { channel: "MessagesChannel" }.to_json
+
+      [{ "command" => "subscribe", "identifier" => identifier },
+       { "command" => "message", "identifier" => identifier, "data" => { action: action }.to_json }].each do |payload|
+        server.worker_pool.invoke(connection, :handle_channel_command, payload, connection: connection)
+      end
+    end
+
     def boot_app(defaults = nil)
       if defaults
         remove_from_config '.*config\.load_defaults.*\n'

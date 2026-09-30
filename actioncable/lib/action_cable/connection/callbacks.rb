@@ -33,6 +33,11 @@ module ActionCable
     # end
     # ```
     #
+    # Such a block holds the state of the user who sent the command, so renders
+    # through ActionController::Renderer made during the command, such as Turbo
+    # Stream broadcasts sent to other users, are not given the attributes it sets
+    # (see `config.action_controller.action_on_unprovided_renderer_input`).
+    #
     module Callbacks
       extend  ActiveSupport::Concern
       include ActiveSupport::Callbacks

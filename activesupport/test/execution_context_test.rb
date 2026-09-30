@@ -30,6 +30,15 @@ class ExecutionContextTest < ActiveSupport::TestCase
     assert_equal "present", ActiveSupport::ExecutionContext.to_h[:multi_assignment]
   end
 
+  test "#[] reads a key, and nil without an execution context" do
+    ActiveSupport::ExecutionContext.clear
+    assert_nil ActiveSupport::ExecutionContext[:foo]
+
+    ActiveSupport::ExecutionContext[:foo] = "bar"
+    assert_equal "bar", ActiveSupport::ExecutionContext[:foo]
+    assert_equal "bar", ActiveSupport::ExecutionContext["foo"]
+  end
+
   test "#pop after #flush does not corrupt execution context" do
     ActiveSupport::ExecutionContext.with(nestable: true) do
       # simulate executor hooks from active_support/railtie.rb

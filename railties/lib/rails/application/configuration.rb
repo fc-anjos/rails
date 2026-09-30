@@ -373,6 +373,8 @@ module Rails
             action_controller.forgery_protection_verification_strategy = :header_only
             action_controller.default_protect_from_forgery_with = :exception
             action_controller.rescue_from_event_backtrace = :array
+            action_controller.action_on_unprovided_renderer_input = :raise
+            action_controller.renderer_restores_current_attributes = true
           end
 
           if respond_to?(:action_dispatch)

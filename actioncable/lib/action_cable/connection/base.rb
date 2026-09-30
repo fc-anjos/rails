@@ -106,8 +106,15 @@ module ActionCable
       end
 
       def handle_channel_command(payload)
-        run_callbacks :command do
-          subscriptions.execute_command payload
+        previous_command = ChannelCommand.current
+        ChannelCommand.current = ChannelCommand.new(payload)
+
+        begin
+          run_callbacks :command do
+            subscriptions.execute_command payload
+          end
+        ensure
+          ChannelCommand.current = previous_command
         end
       rescue Exception => e
         rescue_with_handler(e) || raise

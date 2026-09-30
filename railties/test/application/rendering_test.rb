@@ -150,5 +150,22 @@ module ApplicationTests
         nodes.first.text,
       )
     end
+
+    test "ApplicationController.render in an API application does not give requests a flash" do
+      add_to_config "config.api_only = true"
+
+      app_file "app/controllers/application_controller.rb", <<-RUBY
+        class ApplicationController < ActionController::API
+        end
+      RUBY
+
+      app("development")
+
+      [false, :log, :raise].each do |action|
+        ActionController::API.action_on_unprovided_renderer_input = action
+        assert_equal "hi", ApplicationController.render(plain: "hi")
+        assert_not_respond_to ActionDispatch::Request.empty, :flash
+      end
+    end
   end
 end
