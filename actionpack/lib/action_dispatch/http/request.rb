@@ -522,10 +522,11 @@ module ActionDispatch
     READING_FOR_FRAMEWORK = "action_dispatch.reading_for_framework" # :nodoc:
 
     # Publishes a `read_input.action_dispatch` event for a read of request state,
-    # unless nobody is listening or the framework is making the read.
-    def instrument_read_input(input, key = nil) # :nodoc:
+    # unless nobody is listening or the framework is making the read. A keyed read
+    # passes the value it returns.
+    def instrument_read_input(input, key = nil, value = nil) # :nodoc:
       if ActiveSupport::Notifications.notifier.listening?(READ_INPUT_EVENT) && !reading_for_framework?
-        ActiveSupport::Notifications.instrument(READ_INPUT_EVENT, request: self, input: input, key: key&.to_s)
+        ActiveSupport::Notifications.instrument(READ_INPUT_EVENT, request: self, input: input, key: key&.to_s, value: value)
       end
     end
 

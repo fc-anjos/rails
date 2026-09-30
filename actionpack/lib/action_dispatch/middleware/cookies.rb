@@ -351,18 +351,21 @@ module ActionDispatch
 
       # Returns the value of the cookie by `name`, or `nil` if no such cookie exists.
       def [](name)
-        @request.instrument_read_input(:cookies, name)
-        @cookies[name.to_s]
+        value = @cookies[name.to_s]
+        @request.instrument_read_input(:cookies, name, value)
+        value
       end
 
       def fetch(name, *args, &block)
-        @request.instrument_read_input(:cookies, name)
-        @cookies.fetch(name.to_s, *args, &block)
+        value = @cookies.fetch(name.to_s, *args, &block)
+        @request.instrument_read_input(:cookies, name, value)
+        value
       end
 
       def key?(name)
-        @request.instrument_read_input(:cookies, name)
-        @cookies.key?(name.to_s)
+        value = @cookies.key?(name.to_s)
+        @request.instrument_read_input(:cookies, name, value)
+        value
       end
       alias :has_key? :key?
 
@@ -521,8 +524,12 @@ module ActionDispatch
         @parent_jar = parent_jar
       end
 
+      # Publishes the read with the value once verified or decrypted, rather than
+      # letting the parent jar publish the value the cookie stores.
       def [](name)
-        if data = @parent_jar[name.to_s]
+        data = request.reading_for_framework { @parent_jar[name.to_s] }
+
+        value = if data
           result = parse(name, data, purpose: "cookie.#{name}")
 
           if result.nil?
@@ -531,6 +538,9 @@ module ActionDispatch
             result
           end
         end
+
+        request.instrument_read_input(:cookies, name, value)
+        value
       end
 
       def []=(name, options)

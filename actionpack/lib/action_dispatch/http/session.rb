@@ -86,8 +86,9 @@ module ActionDispatch
       end
 
       def id
-        @req.instrument_read_input(:session, "session_id")
-        current_id
+        id = current_id
+        @req.instrument_read_input(:session, "session_id", id)
+        id
       end
 
       def enabled?
@@ -116,29 +117,33 @@ module ActionDispatch
       def [](key)
         load_for_read!
         key = key.to_s
-        @req.instrument_read_input(:session, key)
 
-        if key == "session_id"
+        value = if key == "session_id"
           current_id&.public_id
         else
           @delegate[key]
         end
+
+        @req.instrument_read_input(:session, key, value)
+        value
       end
 
       # Returns the nested value specified by the sequence of keys, returning `nil` if
       # any intermediate step is `nil`.
       def dig(*keys)
         load_for_read!
-        @req.instrument_read_input(:session, keys.first)
         keys = keys.map.with_index { |key, i| i.zero? ? key.to_s : key }
-        @delegate.dig(*keys)
+        value = @delegate.dig(*keys)
+        @req.instrument_read_input(:session, keys.first, value)
+        value
       end
 
       # Returns true if the session has the given key or false.
       def has_key?(key)
         load_for_read!
-        @req.instrument_read_input(:session, key)
-        @delegate.key?(key.to_s)
+        value = @delegate.key?(key.to_s)
+        @req.instrument_read_input(:session, key, value)
+        value
       end
       alias :key? :has_key?
       alias :include? :has_key?
@@ -220,12 +225,13 @@ module ActionDispatch
       #     # => :bar
       def fetch(key, default = Unspecified, &block)
         load_for_read!
-        @req.instrument_read_input(:session, key)
-        if default == Unspecified
+        value = if default == Unspecified
           @delegate.fetch(key.to_s, &block)
         else
           @delegate.fetch(key.to_s, default, &block)
         end
+        @req.instrument_read_input(:session, key, value)
+        value
       end
 
       def inspect
@@ -258,7 +264,7 @@ module ActionDispatch
 
       def id_was
         load_for_read!
-        @req.instrument_read_input(:session, "session_id")
+        @req.instrument_read_input(:session, "session_id", @id_was)
         @id_was
       end
 

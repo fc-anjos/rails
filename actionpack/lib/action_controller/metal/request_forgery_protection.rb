@@ -701,7 +701,7 @@ module ActionController # :nodoc:
 
       # Checks if any of the authenticity tokens from the request are valid.
       def any_authenticity_token_valid? # :doc:
-        request_authenticity_tokens.any? do |token|
+        request.reading_for_framework { request_authenticity_tokens }.any? do |token|
           valid_authenticity_token?(session, token)
         end
       end

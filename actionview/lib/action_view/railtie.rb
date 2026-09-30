@@ -14,6 +14,7 @@ module ActionView
     config.action_view.image_decoding = nil
     config.action_view.apply_stylesheet_media_default = true
     config.action_view.prepend_content_exfiltration_prevention = false
+    config.action_view.action_on_uncovered_fragment_input = false
 
     config.eager_load_namespaces << ActionView
 
@@ -46,6 +47,10 @@ module ActionView
     config.after_initialize do |app|
       prepend_content_exfiltration_prevention = app.config.action_view.delete(:prepend_content_exfiltration_prevention)
       ActionView::Helpers::ContentExfiltrationPreventionHelper.prepend_content_exfiltration_prevention = prepend_content_exfiltration_prevention
+    end
+
+    config.after_initialize do |app|
+      ActionView::FragmentInputCoverage.action = app.config.action_view.delete(:action_on_uncovered_fragment_input)
     end
 
     config.after_initialize do |app|

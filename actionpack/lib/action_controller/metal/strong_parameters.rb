@@ -226,14 +226,6 @@ module ActionController
     # Returns true if the given key is not present in the parameters.
 
     ##
-    # :method: include?
-    #
-    # :call-seq:
-    #     include?(key)
-    #
-    # Returns true if the given key is present in the parameters.
-
-    ##
     # :method: keys
     #
     # :call-seq:
@@ -249,9 +241,15 @@ module ActionController
     #
     # Returns the content of the parameters as a string.
 
-    delegate :keys, :empty?, :exclude?, :include?,
+    delegate :keys, :empty?, :exclude?,
       :as_json, :to_s, :each_key, to: :@parameters
 
+    # Returns true if the given key is present in the parameters.
+    def include?(key)
+      value = @parameters.include?(key)
+      instrument_read(key, value)
+      value
+    end
     alias_method :has_key?, :include?
     alias_method :key?, :include?
     alias_method :member?, :include?
@@ -802,7 +800,9 @@ module ActionController
     #     params[:person] # => #<ActionController::Parameters {"name"=>"Francesco"} permitted: false>
     #     params[:none]   # => nil
     def [](key)
-      convert_hashes_to_parameters(key, @parameters[key])
+      value = convert_hashes_to_parameters(key, @parameters[key])
+      instrument_read(key, value)
+      value
     end
 
     # Assigns a value to a given `key`. The given key may still get filtered out
@@ -825,7 +825,7 @@ module ActionController
     #     params.fetch(:none, "Francesco")    # => "Francesco"
     #     params.fetch(:none) { |key| "Francesco" } # => "Francesco"
     def fetch(key, *args, &block)
-      convert_value_to_parameters(
+      value = convert_value_to_parameters(
         @parameters.fetch(key) {
           if block_given?
             yield key
@@ -834,6 +834,8 @@ module ActionController
           end
         }
       )
+      instrument_read(key, value)
+      value
     end
 
     # Returns parameters for the given keys. If a key can't be found, there are
@@ -869,7 +871,9 @@ module ActionController
     #     params2.dig(:foo, 1) # => 11
     def dig(*keys)
       convert_hashes_to_parameters(keys.first, @parameters[keys.first])
-      @parameters.dig(*keys)
+      value = @parameters.dig(*keys)
+      instrument_read(keys.first, value)
+      value
     end
 
     # Returns a new `ActionController::Parameters` instance that includes only the
@@ -1206,6 +1210,22 @@ module ActionController
       end
 
     private
+      # Publishes a `read_input.action_dispatch` event for a keyed read, unless
+      # nobody is listening. A read that returns nested parameters publishes
+      # nothing, since the keyed reads of those parameters publish their own. The
+      # params of a controller publish through their request, which leaves out the
+      # reads Rails makes itself.
+      def instrument_read(key, value)
+        return unless ActiveSupport::Notifications.notifier.listening?(ActionDispatch::Request::READ_INPUT_EVENT)
+        return if value.is_a?(Parameters)
+
+        if request = @logging_context&.dig(:request)
+          request.instrument_read_input(:params, key, value)
+        else
+          ActiveSupport::Notifications.instrument(ActionDispatch::Request::READ_INPUT_EVENT, input: :params, key: key.to_s, value: value)
+        end
+      end
+
       def new_instance_with_inherited_permitted_status(hash)
         self.class.new(hash, @logging_context).tap do |new_instance|
           new_instance.permitted = @permitted

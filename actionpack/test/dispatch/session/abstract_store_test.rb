@@ -80,6 +80,21 @@ module ActionDispatch
         assert_equal [[:session, "foo"]] * 6 + [[:session, "session_id"]] * 2, reads
       end
 
+      def test_keyed_reads_publish_read_input_events_with_the_value_read
+        session = loaded_session("foo" => { "bar" => 1 })
+
+        values = capture_notifications("read_input.action_dispatch") do
+          session[:foo]
+          session.dig(:foo, "bar")
+          session.has_key?(:foo)
+          session.key?(:none)
+          session.fetch(:none, 2)
+          session.keys
+        end.map { |event| event.payload[:value] }
+
+        assert_equal [{ "bar" => 1 }, 1, true, false, 2, nil], values
+      end
+
       def test_whole_session_reads_publish_read_input_events_without_a_key
         session = loaded_session("foo" => "bar")
 

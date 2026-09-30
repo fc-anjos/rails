@@ -78,6 +78,7 @@ module ActionView
       #
       def translate(key, **options)
         return key.map { |k| translate(k, **options) } if key.is_a?(Array)
+        FragmentInputCoverage.record_locale unless options[:locale]
         key = key&.to_s unless key.is_a?(Symbol)
 
         alternatives = if options.key?(:default)
@@ -122,6 +123,7 @@ module ActionView
       # See https://www.rubydoc.info/gems/i18n/I18n/Backend/Base:localize
       # for more information.
       def localize(object, **options)
+        FragmentInputCoverage.record_locale unless options[:locale]
         I18n.localize(object, **options)
       end
       alias :l :localize

@@ -27,6 +27,11 @@ class PublicCacheCheckTest < ActionDispatch::IntegrationTest
       render inline: "<%= form_tag('/') {} %>"
     end
 
+    def public_reading_params
+      expires_in 1.hour, public: true
+      render plain: "page: #{params[:page]}"
+    end
+
     def public_without_input
       expires_in 1.hour, public: true
       render plain: "hello"
@@ -104,6 +109,15 @@ class PublicCacheCheckTest < ActionDispatch::IntegrationTest
 
       assert_response :success
       assert_equal "public", response.headers["Cache-Control"].split(", ").last
+    end
+  end
+
+  test "passes a public response that read params" do
+    with_check(:raise) do
+      get "/public_reading_params?page=2"
+
+      assert_response :success
+      assert_equal "page: 2", response.body
     end
   end
 

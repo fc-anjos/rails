@@ -1,3 +1,30 @@
+*   Add `config.action_view.action_on_uncovered_fragment_input`.
+
+    A fragment cached with `cache` is served to every request whose key
+    matches. With this setting set to `:log` or `:raise`, a `cache` block that
+    renders records the session values, cookies, flash messages, params,
+    `Current` attributes and locale it read, and logs a warning or raises
+    `ActionView::UncoveredFragmentInputError`, before the fragment is written,
+    for each value read that is not part of the key. Reads of the CSRF token,
+    the content security policy nonce, or a whole session, cookie jar or flash
+    are always reported. The default is `false`, which records nothing.
+
+    ```ruby
+    config.action_view.action_on_uncovered_fragment_input = :raise
+    ```
+
+    ```erb
+    <% cache product do %>
+      <%= Current.user.name %> <%# raises ActionView::UncoveredFragmentInputError %>
+    <% end %>
+
+    <% cache [product, Current.user] do %>
+      <%= Current.user.name %>
+    <% end %>
+    ```
+
+    *Felipe Cavalheiro Anjos*
+
 *   Allow setting `config.action_view.erb_implementation` to `:herb` to
     compile HTML+ERB templates through Herb.
 

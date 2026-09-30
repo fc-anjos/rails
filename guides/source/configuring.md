@@ -3006,6 +3006,20 @@ Configures the strategy for tracking dependencies between Action View templates.
 | (original)            | `:regex`             |
 | 8.1                   | `:ruby`              |
 
+#### `config.action_view.action_on_uncovered_fragment_input`
+
+Controls what happens when a fragment cached with the `cache` helper read something its cache key does not include. Such a fragment is served from the cache to requests where that input differs: a fragment that shows the signed-in user's name, keyed only on a product, shows that name to everyone who views the product.
+
+When a `cache` block misses and renders, Rails records what the render read: session values, cookies and flash messages, `params`, attributes of `ActiveSupport::CurrentAttributes` classes, and, when the application has more than one available locale, the locale used by the `translate` and `localize` view helpers. A value read is covered when it is equal to one of the parts of the key given to `cache`, such as `cache [product, Current.user]` for a fragment reading `Current.user`. Reads of a whole session, cookie jar or flash, of the CSRF token (by `form_with`, `button_to` or `csrf_meta_tags`, for example) and of the content security policy nonce are never covered, as no key can stand for them.
+
+When set to `:log`, Rails logs a warning naming the template, the key, and each input read with the class of its value. When set to `:raise`, Rails raises an `ActionView::UncoveredFragmentInputError` before writing the fragment to the cache. When set to `false` (the default), nothing is recorded or checked. Any other value raises an `ArgumentError` when the application boots.
+
+```ruby
+config.action_view.action_on_uncovered_fragment_input = :raise
+```
+
+The check compares values, so it reports a fragment whose key covers a read only indirectly: a key on `current_user` for a fragment that reads `session[:user_id]` through the `current_user` helper, or a key on `Current.user` for a fragment that reads it through `Current.session`, as the `Current` class made by the authentication generator does. Read such a value before the `cache` block, and use it both in the key and in the block. The check does not see reads made before the `cache` block, such as a value a helper memoized earlier, reads inside an inner `cache` block that is served from the cache, fragments cached by rendering a collection with `cached: true`, or params read other than with `[]`, `fetch`, `dig` or `key?`, such as with `permit` or `to_h`.
+
 ### Configuring Action Mailbox
 
 `config.action_mailbox` provides the following configuration options:

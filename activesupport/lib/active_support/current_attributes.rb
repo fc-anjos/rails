@@ -99,38 +99,55 @@ module ActiveSupport
     define_callbacks :reset
 
     NOT_SET = Object.new.freeze # :nodoc:
+    OBSERVING_NEW_INSTANCES = :active_support_current_attributes_observing # :nodoc:
+
+    # Reports to one CurrentAttributes.observing_reads block the reads of an
+    # instance's attributes that return the value an observed attribute held when
+    # the observation started.
+    class ReadObserver # :nodoc:
+      def initialize(current, on_read, observed_values)
+        @current = current
+        @on_read = on_read
+        @observed_values = observed_values
+        @opened_set_blocks = CurrentAttributes.opened_set_blocks
+      end
+
+      def read(name, value)
+        @on_read.call(@current, name, value) if observing?(name, value)
+      end
+
+      private
+        # A value the observed code wrote is its own, and so is the value of an
+        # attribute that a #set block opened in the observed code provides.
+        def observing?(name, value)
+          @observed_values.key?(name) && @observed_values[name].equal?(value) &&
+            !@current.provided_attribute?(name, opened_after: @opened_set_blocks)
+        end
+    end
 
     # Holds the attributes of an instance while CurrentAttributes.observing_reads
-    # runs, reporting the reads that return the value an observed attribute held
-    # when the block started.
+    # runs, reporting its reads to each observer.
     class ObservedAttributes < Hash # :nodoc:
-      def initialize(current, attributes, observed_values, on_read)
+      attr_reader :original, :observers
+
+      def initialize(original)
         super()
-        replace(attributes)
-        @current = current
-        @observed_values = observed_values
-        @on_read = on_read
+        replace(original)
+        @original = original
+        @observers = []
       end
 
       def [](name)
         value = super
-        observe(name, value)
+        @observers.each { |observer| observer.read(name, value) }
         value
       end
 
       # Called by CurrentAttributes#attributes, which reads every attribute.
       def dup
-        each { |name, value| observe(name, value) }
+        each { |name, value| @observers.each { |observer| observer.read(name, value) } }
         to_h
       end
-
-      private
-        # A value the observed code wrote, directly or with a #set block, is its own.
-        def observe(name, value)
-          if @observed_values.key?(name) && @observed_values[name].equal?(value)
-            @on_read.call(@current, name)
-          end
-        end
     end
 
     # Holds, while CurrentAttributes.restoring_writes runs, the attribute values
@@ -226,25 +243,41 @@ module ActiveSupport
         end
       end
 
-      # Runs the block, calling +on_read+ with the instance and the attribute name
-      # whenever the block reads an attribute that is set, on an instance that
-      # exists when the block starts, and the read returns the value the attribute
-      # held then. An attribute is set when its value differs from the attribute's
-      # default, which is resolved again to compare. A value the block writes,
-      # directly or with a #set block, is not reported, and is kept after the block.
-      def observing_reads(on_read) # :nodoc:
-        observed = {}.compare_by_identity
+      # Runs the block, calling +on_read+ with the instance, the attribute name and
+      # the value whenever the block reads an observed attribute and the read
+      # returns the value the attribute held when the block started. With
+      # +only_set+, only the attributes that are set, on instances that exist when
+      # the block starts, are observed: those whose value differs from the
+      # attribute's default, which is resolved again to compare. Otherwise every
+      # attribute is, including those of instances created in the block, from the
+      # values they are created with. A value the block writes is not reported,
+      # and neither is the value of an attribute that a #set block opened in the
+      # block provides, while it is open. Values written in the block are kept.
+      # Blocks can be nested, and each is called for the reads made while it runs.
+      def observing_reads(on_read, only_set: true) # :nodoc:
+        observed = []
 
         current_instances.values.each do |instance|
-          if original_attributes = instance.__send__(:observe_reads, on_read)
-            observed[instance] = original_attributes
+          if observer = instance.__send__(:observe_reads, on_read, only_set)
+            observed << [instance, observer]
           end
+        end
+
+        unless only_set
+          observing_new_instances = (IsolatedExecutionState[OBSERVING_NEW_INSTANCES] ||= [])
+          observing_new_instances << [on_read, observed]
         end
 
         yield
       ensure
-        observed.each do |instance, original_attributes|
-          instance.__send__(:stop_observing_reads, original_attributes)
+        if observing_new_instances
+          observing_new_instances.pop
+          # Threads that copy this state, like ActionController::Live's, must not share the stack.
+          IsolatedExecutionState.delete(OBSERVING_NEW_INSTANCES) if observing_new_instances.empty?
+        end
+
+        observed.reverse_each do |instance, observer|
+          instance.__send__(:stop_observing_reads, observer)
         end
       end
 
@@ -288,6 +321,12 @@ module ActiveSupport
       end
 
       private
+        def observe_new_instance(instance)
+          IsolatedExecutionState[OBSERVING_NEW_INSTANCES]&.each do |on_read, observed|
+            observed << [instance, instance.__send__(:observe_reads, on_read, false)]
+          end
+        end
+
         def generated_attribute_methods
           @generated_attribute_methods ||= Module.new.tap { |mod| include mod }
         end
@@ -303,6 +342,7 @@ module ActiveSupport
         def create_instance
           instance = new
           IsolatedExecutionState[:active_support_current_attributes_restoration]&.created(current_instances_key, instance)
+          observe_new_instance(instance)
           instance
         end
 
@@ -400,19 +440,25 @@ module ActiveSupport
     end
 
     private
-      def observe_reads(on_read)
-        return if ObservedAttributes === @attributes
+      def observe_reads(on_read, only_set)
+        if only_set
+          observed_values = attribute_values_changed_from_defaults
+          return if observed_values.empty?
+        else
+          observed_values = defaults.keys.index_with { |name| @attributes.fetch(name, nil) }
+        end
 
-        observed_values = attribute_values_changed_from_defaults
-        return if observed_values.empty?
-
-        original_attributes = @attributes
-        @attributes = ObservedAttributes.new(self, original_attributes, observed_values, on_read)
-        original_attributes
+        @attributes = ObservedAttributes.new(@attributes) unless ObservedAttributes === @attributes
+        observer = ReadObserver.new(self, on_read, observed_values)
+        @attributes.observers << observer
+        observer
       end
 
-      def stop_observing_reads(original_attributes)
-        @attributes = original_attributes.replace(@attributes)
+      # A #reset in the block installs attributes that nothing observes.
+      def stop_observing_reads(observer)
+        if ObservedAttributes === @attributes && @attributes.observers.delete(observer) && @attributes.observers.empty?
+          @attributes = @attributes.original.replace(@attributes)
+        end
       end
 
       def attribute_values

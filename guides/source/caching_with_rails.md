@@ -271,6 +271,56 @@ or `cache_unless`:
 <% end %>
 ```
 
+#### Checking the Cache Key
+
+A cached fragment is served to every request whose cache key matches, so its key
+must include everything the fragment's output depends on. A fragment that reads
+the signed-in user, a param or the current locale, and whose key does not
+include it, is served to other users, pages or languages as it was rendered for
+the first one:
+
+```html+erb
+<% cache product do %>
+  <%= product.name %>
+  <%= link_to "Edit", edit_product_path(product) if Current.user&.admin? %>
+<% end %>
+```
+
+With
+[`config.action_view.action_on_uncovered_fragment_input`](configuring.html#config-action-view-action-on-uncovered-fragment-input)
+set to `:log` or `:raise`, for example in development and test, Rails records
+what a `cache` block read when it renders, and reports each value read that is
+not part of the key given to `cache`. The fragment above is reported with a
+message naming the template, the key, and `Current.user`. Include the value read
+in the key, or read it outside the `cache` block:
+
+```html+erb
+<% cache [product, Current.user] do %>
+  <%= product.name %>
+  <%= link_to "Edit", edit_product_path(product) if Current.user&.admin? %>
+<% end %>
+```
+
+A value is covered only by an equal part of the key. When `Current.user` is
+delegated to `Current.session`, as it is in the `Current` class made by the
+authentication generator, the fragment above reads `Current.session`. Read the
+user before the block and use it in both places:
+
+```html+erb
+<% user = Current.user %>
+<% cache [product, user] do %>
+  <%= product.name %>
+  <%= link_to "Edit", edit_product_path(product) if user&.admin? %>
+<% end %>
+```
+
+Rails records reads of session values, cookies, flash messages, `params`,
+`ActiveSupport::CurrentAttributes` attributes, and the locale used by `t` and
+`l` when the application has more than one available locale. A form built with
+`form_with` or `button_to`, which embeds the CSRF token, and a whole session,
+cookie jar or flash are always reported: no key can cover them, so they must be
+rendered outside the cached fragment.
+
 #### Collection Caching
 
 The `render` helper can also cache each template in a collection. Instead of

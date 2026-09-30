@@ -172,8 +172,9 @@ module ActionDispatch
       end
 
       def [](k)
-        @request&.instrument_read_input(:flash, k)
-        @flashes[k.to_s]
+        value = @flashes[k.to_s]
+        @request&.instrument_read_input(:flash, k, value)
+        value
       end
 
       # Sets a flash for the current action only. Unlike `discard(k)`, it does not
@@ -195,8 +196,9 @@ module ActionDispatch
       end
 
       def key?(name)
-        @request&.instrument_read_input(:flash, name)
-        @flashes.key? name.to_s
+        value = @flashes.key?(name.to_s)
+        @request&.instrument_read_input(:flash, name, value)
+        value
       end
 
       # Immediately deletes the single flash entry. Use this method when you want

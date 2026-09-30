@@ -1,3 +1,18 @@
+*   Publish `read_input.action_dispatch` for keyed reads of `params`, and add
+    the value read to the payload.
+
+    `ActionController::Parameters#[]`, `fetch`, `dig` and `key?` and its
+    aliases publish the event with `input: :params`, and with the controller's
+    request for the params of a controller. A read that returns nested
+    parameters is not published; the reads of the nested parameters are.
+
+    Keyed reads of the session, cookies, flash and params carry the value the
+    read returned in `:value`. For `cookies.signed` and `cookies.encrypted`, it
+    is the verified or decrypted value. When nothing is subscribed, reads
+    allocate nothing new.
+
+    *Felipe Cavalheiro Anjos*
+
 *   Add `config.action_dispatch.action_on_unsafe_public_cache`.
 
     Shared caches, such as CDNs and proxies, may serve a response marked
