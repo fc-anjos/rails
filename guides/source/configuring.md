@@ -68,6 +68,7 @@ Below are the default values associated with each target version. In cases of co
 - [`config.action_dispatch.strict_accept_header`](#config-action-dispatch-strict-accept-header): `true`
 - [`config.action_view.erb_implementation`](#config-action-view-erb-implementation): `:herb`
 - [`config.active_job.enqueue_after_transaction_commit`](#config-active-job-enqueue-after-transaction-commit): `true`
+- [`config.active_job.isolate_inline_jobs`](#config-active-job-isolate-inline-jobs): `true`
 - [`config.active_record.postgresql_adapter_decode_bytea`](#config-active-record-postgresql-adapter-decode-bytea): `true`
 - [`config.active_record.postgresql_adapter_decode_money`](#config-active-record-postgresql-adapter-decode-money): `true`
 - [`config.active_storage.analyze`](#config-active-storage-analyze): `:immediately`
@@ -3504,6 +3505,34 @@ class NotificationJob < ApplicationJob
   self.enqueue_after_transaction_commit = false
 end
 ```
+
+The default value depends on the `config.load_defaults` target version:
+
+| Starting with version | The default value is |
+| --------------------- | -------------------- |
+| (original)            | `false`              |
+| 8.2                   | `true`               |
+
+#### `config.active_job.isolate_inline_jobs`
+
+Controls whether jobs performed on the calling thread run with their own
+`ActiveSupport::CurrentAttributes` and execution context. This applies to jobs
+performed by the `:inline` adapter, by the `:test` adapter and by
+`perform_enqueued_jobs`.
+
+When true, such a job starts with empty `Current` attributes, as it does when a
+queue performs it, and the caller's `Current` attributes are put back once the
+job finishes, also when it raises. Each attribute the job left with another
+value is set back through the caller's attribute writer, as when a
+`Current.set` block ends, so the side effects of the job's writers (`Time.zone`,
+a tenant's database setting) are undone, and a writer that cannot take the
+caller's value raises. A `Current` class the caller had not used is set back to
+its defaults through its writers. When false, a job performed during a request,
+a test or a console session reads and changes the caller's `Current`
+attributes, and a job performed outside of the Rails executor, such as in a
+Rake task, clears them.
+
+The job keeps running on the calling thread, with the same database connection.
 
 The default value depends on the `config.load_defaults` target version:
 

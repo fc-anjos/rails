@@ -1,3 +1,29 @@
+*   Add `config.active_job.isolate_inline_jobs` to perform inline jobs with their own `Current` attributes.
+
+    Jobs performed on the calling thread, by the `:inline` and `:test` adapters
+    and by `perform_enqueued_jobs`, share the caller's execution context. During
+    a request, a test or a console session, such a job reads and changes the
+    caller's `Current` attributes, so a `broadcast_replace_later_to` performed
+    inline renders with the signed-in user's `Current.user`. Outside of the
+    executor, in a Rake task for example, performing such a job clears the
+    caller's `Current` attributes.
+
+    When enabled, these jobs start with empty `Current` attributes, as they do
+    when a queue performs them, and the caller's are put back once the job
+    finishes, also when it raises. Each attribute the job left with another
+    value is set back through the caller's attribute writer, as when a
+    `Current.set` block ends, so writer side effects such as `Time.zone` or a
+    tenant's database setting are undone. The job still runs on the calling
+    thread, with the same database connection.
+
+    ```ruby
+    config.active_job.isolate_inline_jobs = true
+    ```
+
+    Enabled by `config.load_defaults "8.2"`.
+
+    *Felipe Cavalheiro Anjos*
+
 *   Fix continuation step cursors losing their type when a job is interrupted
     and resumed.
 

@@ -96,6 +96,52 @@ Rails.application.config.action_view.erb_implementation = :erubi
 
 Applications with a custom ERB implementation should set it through `config.action_view.erb_implementation`, since the framework default replaces an `ActionView::Base.erb_implementation` assignment made in an initializer.
 
+### Jobs performed inline start with empty `Current` attributes
+
+With the 8.2 framework defaults, jobs performed on the calling thread by the
+`:inline` adapter, by the `:test` adapter and by `perform_enqueued_jobs` run
+with their own `ActiveSupport::CurrentAttributes`, as they do when a queue
+performs them, and the caller's `Current` attributes are put back once the job
+finishes, through their writers, as when a `Current.set` block ends.
+Previously, such a job performed during a request, a test or a console session
+saw the caller's `Current` attributes, and changes it made to them were visible
+to the caller afterwards; performed outside of the Rails executor, such as in a
+Rake task, it cleared the caller's `Current` attributes.
+
+A writer with side effects runs again when the job finishes, with the caller's
+value, for each attribute the job left with another value. A writer that
+cannot take that value, such as one calling a method on a user when the caller
+has none, raises as it would at the end of a `Current.set` block.
+
+A job, or a test, that relied on the job seeing the caller's `Current`
+attributes should pass the values the job needs as arguments, as it must for a
+queue that performs the job in another process:
+
+```ruby
+# Before
+class NotifyJob < ApplicationJob
+  def perform(post)
+    post.notify_followers(by: Current.user)
+  end
+end
+
+# After
+class NotifyJob < ApplicationJob
+  def perform(post, user)
+    post.notify_followers(by: user)
+  end
+end
+```
+
+A job can also set its `Current` attributes from its arguments with
+`Current.set(user: user) { ... }`.
+
+To keep the previous behavior, set:
+
+```ruby
+Rails.application.config.active_job.isolate_inline_jobs = false
+```
+
 ### The old Active Record 6.1 marshalling format was removed.
 
 If your application still sets `active_record.marshalling_format_version = 6.1`, which may

@@ -68,6 +68,86 @@ class ExecutionContextTest < ActiveSupport::TestCase
     assert_equal 42, ActiveSupport::ExecutionContext.to_h[:foo]
   end
 
+  class Current < ActiveSupport::CurrentAttributes
+    attribute :user
+
+    singleton_class.attr_accessor :resets_count
+    self.resets_count = 0
+    resets { self.class.resets_count += 1 }
+  end
+
+  test "#isolated runs the block with an empty context and restores the caller's afterwards" do
+    ActiveSupport::ExecutionContext[:controller] = "caller"
+    Current.user = "caller"
+
+    ActiveSupport::ExecutionContext.isolated do
+      assert_equal({}, ActiveSupport::ExecutionContext.to_h)
+      assert_nil Current.user
+
+      ActiveSupport::ExecutionContext[:job] = "isolated"
+      Current.user = "isolated"
+    end
+
+    assert_equal({ controller: "caller" }, ActiveSupport::ExecutionContext.to_h)
+    assert_equal "caller", Current.user
+  ensure
+    Current.reset
+  end
+
+  test "#isolated restores the caller's context when nestable is false" do
+    ActiveSupport::ExecutionContext.with(nestable: false) do
+      ActiveSupport::ExecutionContext[:controller] = "caller"
+
+      ActiveSupport::ExecutionContext.isolated do
+        ActiveSupport::ExecutionContext.push
+        assert_equal({}, ActiveSupport::ExecutionContext.to_h)
+        ActiveSupport::ExecutionContext.pop
+      end
+
+      assert_equal({ controller: "caller" }, ActiveSupport::ExecutionContext.to_h)
+    end
+  end
+
+  test "#isolated restores the caller's context when the block raises" do
+    ActiveSupport::ExecutionContext[:controller] = "caller"
+    Current.user = "caller"
+
+    assert_raises(RuntimeError) do
+      ActiveSupport::ExecutionContext.isolated do
+        Current.user = "isolated"
+        raise "boom"
+      end
+    end
+
+    assert_equal({ controller: "caller" }, ActiveSupport::ExecutionContext.to_h)
+    assert_equal "caller", Current.user
+  ensure
+    Current.reset
+  end
+
+  test "#isolated runs no reset callbacks" do
+    Current.user = "caller"
+
+    assert_no_changes -> { Current.resets_count } do
+      ActiveSupport::ExecutionContext.isolated { Current.user = "isolated" }
+    end
+    assert_equal "caller", Current.user
+  ensure
+    Current.reset
+  end
+
+  test "#isolated calls the after_change callbacks when it swaps the context in and out" do
+    ActiveSupport::ExecutionContext.with(after_change_callbacks: [].freeze) do
+      seen = []
+      ActiveSupport::ExecutionContext[:controller] = "caller"
+      ActiveSupport::ExecutionContext.after_change { seen << ActiveSupport::ExecutionContext.to_h[:controller] }
+
+      ActiveSupport::ExecutionContext.isolated { }
+
+      assert_equal [nil, "caller"], seen
+    end
+  end
+
   test "callbacks are ractor safe" do
     ActiveSupport::ExecutionContext.with(after_change_callbacks: [].freeze) do
       ActiveSupport::ExecutionContext.after_change(&ActiveSupport::Ractors.shareable_proc { })

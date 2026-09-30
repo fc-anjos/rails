@@ -49,19 +49,36 @@ class CurrentAttributesIntegrationTest < ActiveSupport::TestCase
         def set_no_customer
           render :index
         end
+
+        def perform_inline_job
+          Current.customer = Customer.new("david")
+          RecordCustomerJob.perform_later
+          render :index
+        end
       end
     RUBY
+
+    app_file "app/jobs/record_customer_job.rb", <<-RUBY
+      class RecordCustomerJob < ActiveJob::Base
+        cattr_accessor :customers, default: []
+
+        def perform
+          customers << Current.customer&.name
+        end
+      end
+    RUBY
+
+    add_to_config "config.active_job.queue_adapter = :inline"
 
     app_file "app/views/customers/index.html.erb", <<-RUBY
       <%= Current.customer&.name || 'noone' %>,<%= Time.zone.name %>
     RUBY
-
-    require "#{app_path}/config/environment"
   end
 
   teardown :teardown_app
 
   test "current customer is assigned and cleared" do
+    boot_app
     get "/customers/set_current_customer"
     assert_equal 200, last_response.status
     assert_match(/david,Copenhagen/, last_response.body)
@@ -72,6 +89,8 @@ class CurrentAttributesIntegrationTest < ActiveSupport::TestCase
   end
 
   test "resets after execution" do
+    boot_app
+
     assert_nil Current.customer
     assert_equal "UTC", Time.zone.name
 
@@ -85,4 +104,43 @@ class CurrentAttributesIntegrationTest < ActiveSupport::TestCase
     assert_nil Current.customer
     assert_equal "UTC", Time.zone.name
   end
+
+  test "a job performed inline during a request starts with empty current attributes" do
+    boot_app "8.2"
+
+    get "/customers/perform_inline_job"
+
+    assert_equal 200, last_response.status
+    assert_match(/david,Copenhagen/, last_response.body)
+    assert_equal [nil], RecordCustomerJob.customers
+  end
+
+  test "a job performed inline outside of the executor keeps the caller's current attributes and what their writers set" do
+    boot_app "8.2"
+    outside_of_tests
+
+    Current.customer = Customer.new("david")
+    RecordCustomerJob.perform_later
+
+    assert_equal [nil], RecordCustomerJob.customers
+    assert_equal "david", Current.customer.name
+    assert_equal "Copenhagen", Time.zone.name
+  end
+
+  private
+    def boot_app(defaults = nil)
+      if defaults
+        remove_from_config '.*config\.load_defaults.*\n'
+        add_to_config "config.load_defaults #{defaults.inspect}"
+      end
+
+      require "#{app_path}/config/environment"
+    end
+
+    # Loading ActiveSupport::TestCase with executor_around_test_case makes
+    # execution contexts nest. Outside of tests, in a Rake task for example,
+    # they do not.
+    def outside_of_tests
+      ActiveSupport::ExecutionContext.nestable = false
+    end
 end

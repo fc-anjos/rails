@@ -3569,6 +3569,36 @@ module ApplicationTests
       assert_equal true, ActiveJob::Base.enqueue_after_transaction_commit
     end
 
+    test "config.active_job.isolate_inline_jobs is false with 8.1 defaults" do
+      remove_from_config '.*config\.load_defaults.*\n'
+      add_to_config 'config.load_defaults "8.1"'
+
+      app "development"
+
+      assert_equal false, ActiveJob.isolate_inline_jobs
+    end
+
+    test "config.active_job.isolate_inline_jobs is true with 8.2 defaults" do
+      remove_from_config '.*config\.load_defaults.*\n'
+      add_to_config 'config.load_defaults "8.2"'
+
+      app "development"
+
+      assert_equal true, ActiveJob.isolate_inline_jobs
+    end
+
+    test "config.active_job.isolate_inline_jobs can be set via new framework defaults" do
+      remove_from_config '.*config\.load_defaults.*\n'
+      add_to_config 'config.load_defaults "8.1"'
+      app_file "config/initializers/new_framework_defaults_8_2.rb", <<-RUBY
+        Rails.application.config.active_job.isolate_inline_jobs = true
+      RUBY
+
+      app "development"
+
+      assert_equal true, ActiveJob.isolate_inline_jobs
+    end
+
     test "active record job queue is set" do
       app "development"
 

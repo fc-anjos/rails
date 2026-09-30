@@ -21,6 +21,24 @@
 # Rails.application.config.active_job.enqueue_after_transaction_commit = true
 
 ###
+# Perform jobs run by the `:inline` and `:test` adapters, and by
+# `perform_enqueued_jobs`, with their own `ActiveSupport::CurrentAttributes`
+# and execution context.
+#
+# These jobs run on the calling thread. When disabled, a job performed during a
+# request, a test or a console session reads and changes the caller's `Current`
+# attributes, and a job performed outside of the Rails executor (in a Rake task,
+# for example) clears them. When enabled, the job starts with empty `Current`
+# attributes, as it does when a queue performs it, and the caller's are put
+# back once the job finishes, through their writers, as when a `Current.set`
+# block ends.
+#
+# A job that relies on the caller's `Current` attributes should receive those
+# values as arguments.
+#++
+# Rails.application.config.active_job.isolate_inline_jobs = true
+
+###
 # Use Sec-Fetch-Site header for CSRF protection instead of tokens.
 #
 # Modern browsers send the Sec-Fetch-Site header to indicate the relationship

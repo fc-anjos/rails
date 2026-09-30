@@ -6,7 +6,8 @@ require "active_support/core_ext/hash/keys"
 module ActiveSupport
   module ExecutionContext # :nodoc:
     class Record # :nodoc:
-      attr_reader :store, :current_attributes_instances
+      attr_reader :store
+      attr_accessor :current_attributes_instances
 
       def initialize
         @store = {}
@@ -103,6 +104,24 @@ module ActiveSupport
         self
       end
 
+      # Runs the block with a fresh execution context: an empty store and no
+      # CurrentAttributes instances. The caller's context is put back when the
+      # block exits, without running any reset callbacks. Wrap it in
+      # CurrentAttributes.restoring_writes to also undo the side effects of the
+      # attribute writers the block called.
+      def isolated
+        saved_record = IsolatedExecutionState[:active_support_execution_context]
+        IsolatedExecutionState[:active_support_execution_context] = nil
+        @after_change_callbacks.each(&:call)
+
+        begin
+          yield
+        ensure
+          IsolatedExecutionState[:active_support_execution_context] = saved_record
+          @after_change_callbacks.each(&:call)
+        end
+      end
+
       def clear
         IsolatedExecutionState[:active_support_execution_context] = nil
       end
@@ -113,6 +132,10 @@ module ActiveSupport
 
       def current_attributes_instances
         record.current_attributes_instances
+      end
+
+      def current_attributes_instances=(instances)
+        record.current_attributes_instances = instances
       end
 
       private

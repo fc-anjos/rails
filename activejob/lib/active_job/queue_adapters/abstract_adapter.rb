@@ -20,6 +20,11 @@ module ActiveJob
       def stopping?(job = nil)
         !!@stopping
       end
+
+      private
+        def execute_inline(job_data) # :nodoc:
+          ActiveJob.perform_inline { Base.execute(job_data) }
+        end
     end
   end
 end
