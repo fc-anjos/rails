@@ -399,7 +399,19 @@ class CurrentAttributesTest < ActiveSupport::TestCase
       assert_nil Session.previous
     end
 
-    assert_equal [[Current, :world], [Current, :counter_callable], [Session, :current]], reads
+    assert_equal [[Current, :world, "world/1"], [Current, :counter_callable, 1], [Session, :current, 42]], reads
+  end
+
+  test "observing_reads reports reads of every attribute unless only_set is true" do
+    Current.world = "world/1"
+
+    reads = observe_reads(only_set: false) do
+      assert_equal "world/1", Current.world
+      assert_equal 0, Current.counter_integer
+      assert_nil Current.account
+    end
+
+    assert_equal [[Current, :world, "world/1"], [Current, :counter_integer, 0], [Current, :account, nil]], reads
   end
 
   test "observing_reads reports every observed attribute when reading all attributes" do
@@ -407,7 +419,7 @@ class CurrentAttributesTest < ActiveSupport::TestCase
 
     reads = observe_reads { Current.attributes }
 
-    assert_equal [[Current, :world]], reads
+    assert_equal [[Current, :world, "world/1"]], reads
   end
 
   test "observing_reads does not report an attribute after the block writes it, nor reads after the block" do
@@ -432,8 +444,7 @@ class CurrentAttributesTest < ActiveSupport::TestCase
       assert_equal "world/1", Current.world
     end
 
-    # Current.set reads the value it puts back once the block closes.
-    assert_equal [[Current, :world]] * 2, reads
+    assert_equal [[Current, :world, "world/1"]], reads
   end
 
   test "observing_reads reports an attribute again once the block writes its original value back" do
@@ -446,7 +457,17 @@ class CurrentAttributesTest < ActiveSupport::TestCase
       Current.world
     end
 
-    assert_equal [[Current, :world]], reads
+    assert_equal [[Current, :world, "world/1"]], reads
+  end
+
+  test "observing_reads reports an attribute provided by a set block opened before the block" do
+    Current.world = "world/1"
+
+    reads = Current.set(world: "world/2") do
+      observe_reads { Current.world }
+    end
+
+    assert_equal [[Current, :world, "world/2"]], reads
   end
 
   test "observing_reads does not observe instances created in the block" do
@@ -456,6 +477,21 @@ class CurrentAttributesTest < ActiveSupport::TestCase
     end
 
     assert_empty reads
+  end
+
+  test "observing_reads observes instances created in the block unless only_set is true" do
+    reads = observe_reads(only_set: false) do
+      assert_nil Session.current
+      Session.previous = 42
+      Session.previous
+    end
+
+    assert_equal 42, Session.previous
+
+    Session.current
+    ActiveSupport::ExecutionContext.clear
+    Session.current
+    assert_equal [[Session, :current, nil]], reads
   end
 
   test "observing_reads keeps what a reset in the block installs" do
@@ -488,16 +524,19 @@ class CurrentAttributesTest < ActiveSupport::TestCase
     assert_empty reads
   end
 
-  test "observing_reads is a no-op when nested" do
+  test "observing_reads reports the reads of a nested block to both blocks" do
     Current.world = "world/1"
     inner_reads = nil
 
-    outer_reads = observe_reads do
-      inner_reads = observe_reads { Current.world }
+    outer_reads = observe_reads(only_set: false) do
+      Current.account = "account/1"
+      inner_reads = observe_reads(only_set: false) { Current.world + Current.account }
     end
+    assert_equal "account/1", Current.account
+    assert_equal "world/1", Current.world
 
-    assert_empty inner_reads
-    assert_equal [[Current, :world]], outer_reads
+    assert_equal [[Current, :world, "world/1"], [Current, :account, "account/1"]], inner_reads
+    assert_equal [[Current, :world, "world/1"]], outer_reads
   end
 
   test "restoring_writes sets back what the block writes, through the writers" do
@@ -738,10 +777,10 @@ class CurrentAttributesTest < ActiveSupport::TestCase
       end
     end
 
-    def observe_reads(&block)
+    def observe_reads(only_set: true, &block)
       reads = []
-      on_read = ->(current, name) { reads << [current.class, name] }
-      ActiveSupport::CurrentAttributes.observing_reads(on_read, &block)
+      on_read = ->(current, name, value) { reads << [current.class, name, value] }
+      ActiveSupport::CurrentAttributes.observing_reads(on_read, only_set: only_set, &block)
       reads
     end
 end

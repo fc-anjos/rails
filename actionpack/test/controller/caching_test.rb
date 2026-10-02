@@ -485,3 +485,413 @@ class FragmentCacheKeyTest < ActionController::TestCase
     ENV["RAILS_CACHE_ID"] = ENV["RAILS_APP_VERSION"] = nil
   end
 end
+
+class FragmentInputCoverageTest < ActionDispatch::IntegrationTest
+  include CookieSessionAppTestHelpers
+
+  class FragmentsController < ActionController::Base
+    self.perform_caching = true
+
+    def sign_in
+      session[:user_id] = 1
+      cookies[:theme] = "dark"
+      cookies.signed[:account_id] = 1
+      head :ok
+    end
+
+    def session_keyed_on_post
+      render inline: "<% cache 'post' do %><%= session[:user_id] %><% end %>"
+    end
+
+    def session_keyed_on_value
+      render inline: "<% cache ['post', session[:user_id]] do %><%= session[:user_id] %><% end %>"
+    end
+
+    def whole_session
+      render inline: "<% cache ['post', session[:user_id]] do %><%= session.to_hash.size %><% end %>"
+    end
+
+    def cookie_keyed_on_post
+      render inline: "<% cache 'post' do %><%= cookies[:theme] %><% end %>"
+    end
+
+    def signed_cookie_keyed_on_value
+      render inline: "<% cache ['post', cookies.signed[:account_id]] do %><%= cookies.signed[:account_id] %><% end %>"
+    end
+
+    def authenticity_token
+      render inline: "<% cache 'form' do %><%= form_authenticity_token.present? %><% end %>"
+    end
+
+    def params_keyed_on_posts
+      render inline: "<% cache 'posts' do %><%= params[:page] %><% end %>"
+    end
+
+    def params_keyed_on_value
+      render inline: "<% cache ['posts', params[:page]] do %><%= params[:page] %><% end %>"
+    end
+
+    def nested_params_keyed_on_value
+      render inline: "<% cache ['posts', params[:filter][:status]] do %><%= params[:filter][:status] %><% end %>"
+    end
+
+    def nested
+      render inline: "<% cache 'outer' do %><% cache ['inner', session[:user_id]] do %><%= session[:user_id] %><% end %><% end %>"
+    end
+  end
+
+  setup do
+    @log = StringIO.new
+    FragmentsController.cache_store = @store = ActiveSupport::Cache::MemoryStore.new
+  end
+
+  test "reports session values, cookies, params and the authenticity token the key does not include" do
+    with_check(:log) do
+      get "/sign_in"
+
+      {
+        "/session_keyed_on_post" => 'The fragment cached in inline template with the key "post" read `session["user_id"]` (Integer), which the key does not include.',
+        "/whole_session" => "read the whole session, which the key does not include.",
+        "/cookie_keyed_on_post" => 'read `cookies["theme"]` (String)',
+        "/params_keyed_on_posts?page=2" => 'read `params["page"]` (String)',
+        "/authenticity_token" => 'with the key "form" read the CSRF token, which the key does not include.'
+      }.each do |path, message|
+        @store.clear
+        get path
+        assert_match message, @log.string
+      end
+    end
+  end
+
+  test "passes session values, signed cookies and params the key includes" do
+    with_check(:raise) do
+      get "/sign_in"
+
+      {
+        "/session_keyed_on_value" => "1",
+        "/signed_cookie_keyed_on_value" => "1",
+        "/params_keyed_on_value?page=2" => "2",
+        "/nested_params_keyed_on_value?filter[status]=draft" => "draft"
+      }.each do |path, body|
+        get path
+        assert_equal body, response.body
+      end
+    end
+  end
+
+  test "reports the reads of an inner fragment for the outer fragment" do
+    with_check(:log) do
+      get "/sign_in"
+      get "/nested"
+
+      assert_equal "1", response.body
+      assert_equal 1, @log.string.scan("The fragment cached").size
+      assert_match 'with the key "outer" read `session["user_id"]` (Integer)', @log.string
+    end
+  end
+
+  test "raises and writes nothing when the key does not cover a read" do
+    with_check(:raise) do
+      get "/sign_in"
+
+      writes = capture_notifications("cache_write.active_support") do
+        error = assert_raises(ActionView::Template::Error) { get "/session_keyed_on_post" }
+        assert_instance_of ActionView::UncoveredFragmentInputError, error.cause
+        assert_match 'read `session["user_id"]` (Integer)', error.message
+        assert_equal "inline template", error.template.short_identifier
+      end
+
+      assert_empty writes
+    end
+  end
+
+  private
+    def with_check(action, &block)
+      ActionView::FragmentInputCoverage.with(action: action) do
+        ActionView::Base.with(logger: ActiveSupport::Logger.new(@log)) do
+          with_cookie_session_app(FragmentsController, &block)
+        end
+      end
+    end
+end
+
+class CacheHelperInputCoverageTest < ActiveSupport::TestCase
+  class Current < ActiveSupport::CurrentAttributes
+    attribute :user
+  end
+
+  class SessionCurrent < ActiveSupport::CurrentAttributes
+    attribute :session
+    delegate :user, to: :session, allow_nil: true
+  end
+
+  Session = Struct.new(:user)
+
+  Post = Struct.new(:id) do
+    def cache_key
+      "posts/#{id}"
+    end
+  end
+
+  # Like a relation, it converts to an array by loading, and compares by loading.
+  class Records
+    def cache_key
+      "records"
+    end
+
+    def to_ary
+      raise "loaded"
+    end
+
+    def ==(other)
+      raise "loaded"
+    end
+  end
+
+  class FragmentsController < ActionController::Base
+    self.view_paths = ActionView::FixtureResolver.new(
+      "fragments/_current_user.html.erb" => "<% cache key do %><%= CacheHelperInputCoverageTest::Current.user %><% end %>",
+      "fragments/_current_user_set_inside.html.erb" => "<% cache key do %><% CacheHelperInputCoverageTest::Current.set(user: 'author') do %><%= CacheHelperInputCoverageTest::Current.user %><% end %><% end %>",
+      "fragments/_delegated_user.html.erb" => "<% cache key do %><%= CacheHelperInputCoverageTest::SessionCurrent.user %><% end %>",
+      "fragments/_delegated_user_read_before.html.erb" => "<% user = CacheHelperInputCoverageTest::SessionCurrent.user %><% cache [key, user] do %><%= user %><% end %>",
+      "fragments/_nested.html.erb" => "<% cache outer_key do %><% cache inner_key do %><%= CacheHelperInputCoverageTest::Current.user %><% end %><% end %>",
+      "fragments/_translated.html.erb" => "<% cache key do %><%= t('.title', default: 'Title') %><% end %>",
+      "fragments/_localized.html.erb" => "<% cache key do %><%= l(date) %><% end %>",
+      "fragments/_translated_in_locale.html.erb" => "<% cache key do %><%= t('.title', default: 'Title', locale: :en) %><% end %>",
+      "fragments/_translated_in_nil_locale.html.erb" => "<% cache key do %><%= t('.title', default: 'Title', locale: nil) %><% end %>"
+    )
+  end
+
+  setup do
+    @store = ActiveSupport::Cache::MemoryStore.new
+    @log = StringIO.new
+    @post = Post.new(1)
+
+    @controller = FragmentsController.new
+    @controller.perform_caching = true
+    @controller.cache_store = @store
+  end
+
+  teardown do
+    Current.reset
+  end
+
+  test "reports a Current attribute that the fragment read and its key does not include" do
+    Current.user = "david"
+
+    assert_equal "david", render_fragment("current_user", check: :log, key: [@post])
+
+    assert_match "The fragment cached in fragments/_current_user.html.erb with the key \"posts/1\" " \
+      "read `CacheHelperInputCoverageTest::Current.user` (String), which the key does not include.", @log.string
+    assert_no_match "david", @log.string
+  end
+
+  test "compares a value read to the parts of the key without converting either" do
+    Current.user = ["david"]
+
+    render_fragment("current_user", check: :log, key: [@post, Records.new])
+
+    assert_match "read `CacheHelperInputCoverageTest::Current.user` (Array)", @log.string
+  end
+
+  test "passes a Current attribute that the key includes" do
+    Current.user = "david"
+
+    assert_equal "david", render_fragment("current_user", check: :raise, key: [@post, Current.user])
+  end
+
+  test "reports the attribute a delegated Current method reads, and passes the value read before the fragment" do
+    SessionCurrent.session = Session.new("david")
+
+    assert_equal "david", render_fragment("delegated_user", check: :log, key: [@post, SessionCurrent.user])
+    assert_match "read `CacheHelperInputCoverageTest::SessionCurrent.session` (CacheHelperInputCoverageTest::Session)", @log.string
+
+    @log.truncate(0)
+    assert_equal "david", render_fragment("delegated_user_read_before", check: :log, key: @post)
+    assert_empty @log.string
+  ensure
+    SessionCurrent.reset
+  end
+
+  test "reports a Current attribute that is not set" do
+    Current.user = "david"
+    Current.user = nil
+
+    render_fragment("current_user", check: :log, key: [@post])
+
+    assert_match "read `CacheHelperInputCoverageTest::Current.user` (NilClass)", @log.string
+  end
+
+  test "reports a Current attribute of a class first used in the fragment" do
+    ActiveSupport::CurrentAttributes.clear_all
+
+    render_fragment("current_user", check: :log, key: [@post])
+
+    assert_match "read `CacheHelperInputCoverageTest::Current.user` (NilClass)", @log.string
+  end
+
+  test "reports a Current attribute provided by a set block opened outside the fragment" do
+    Current.set(user: "david") { render_fragment("current_user", check: :log, key: [@post]) }
+
+    assert_match "read `CacheHelperInputCoverageTest::Current.user` (String)", @log.string
+  end
+
+  test "passes a Current attribute provided by a set block opened in the fragment" do
+    Current.user = "david"
+
+    assert_equal "author", render_fragment("current_user_set_inside", check: :raise, key: [@post])
+    assert_equal "david", Current.user
+  end
+
+  test "reports the locale a translation or localization without a locale read when the key does not include it" do
+    I18n.stub(:available_locales, [:en, :de]) do
+      { "translated" => {}, "translated_in_nil_locale" => {}, "localized" => { date: Date.new(2026, 9, 30) } }.each do |partial, locals|
+        @log.truncate(0)
+        render_fragment(partial, check: :log, key: [@post], **locals)
+
+        assert_match "fragments/_#{partial}.html.erb with the key \"posts/1\" read `I18n.locale` (Symbol)", @log.string
+      end
+    end
+  end
+
+  test "passes the locale when the key includes it, the translation is given it, or the application has a single locale" do
+    I18n.stub(:available_locales, [:en, :de]) do
+      assert_equal "Title", render_fragment("translated", check: :raise, key: [@post, I18n.locale])
+      assert_equal "Title", render_fragment("translated_in_locale", check: :raise, key: [@post])
+    end
+
+    I18n.stub(:available_locales, [:en]) do
+      assert_equal "Title", render_fragment("translated", check: :raise, key: [@post])
+    end
+  end
+
+  test "reports the reads of an inner fragment for both fragments" do
+    Current.user = "david"
+
+    render_fragment("nested", check: :log, outer_key: [@post, :outer], inner_key: [@post, :inner])
+
+    assert_match "with the key \"posts/1/outer\" read `CacheHelperInputCoverageTest::Current.user`", @log.string
+    assert_match "with the key \"posts/1/inner\" read `CacheHelperInputCoverageTest::Current.user`", @log.string
+  end
+
+  test "reads nothing on a cache hit" do
+    Current.user = "david"
+    render_fragment("current_user", check: :log, key: [@post])
+    @log.truncate(0)
+
+    Current.user = "jeremy"
+
+    assert_equal "david", render_fragment("current_user", check: :log, key: [@post])
+    assert_empty @log.string
+  end
+
+  test "checks nothing when disabled" do
+    Current.user = "david"
+
+    I18n.stub(:available_locales, [:en, :de]) do
+      assert_equal "david", render_fragment("current_user", check: false, key: [@post])
+      assert_equal "Title", render_fragment("translated", check: false, key: [@post])
+    end
+
+    assert_empty @log.string
+  end
+
+  test "subscribes to request input reads only while enabled" do
+    ActionView::FragmentInputCoverage.with(action: :log) do
+      assert ActiveSupport::Notifications.notifier.listening?("read_input.action_dispatch")
+    end
+
+    assert_not ActiveSupport::Notifications.notifier.listening?("read_input.action_dispatch")
+  end
+
+  test "rejects an unknown action" do
+    error = assert_raises(ArgumentError) { ActionView::FragmentInputCoverage.action = :warn }
+    assert_equal "config.action_view.action_on_uncovered_fragment_input must be false, :log or :raise, got :warn", error.message
+  end
+
+  private
+    def render_fragment(partial, check:, **locals)
+      view = @controller.view_context
+      view.logger = ActiveSupport::Logger.new(@log)
+
+      ActionView::FragmentInputCoverage.with(action: check) do
+        view.render(partial: "fragments/#{partial}", locals: locals).strip
+      end
+    end
+end
+
+class FragmentInputCoverageLiveTest < ActionController::TestCase
+  class Current < ActiveSupport::CurrentAttributes
+    attribute :user
+  end
+
+  # The Live action and the test each render a fragment, one open while the other reads.
+  class LiveFragmentsController < ActionController::Base
+    include ActionController::Live
+
+    cattr_accessor :live_opened, :test_opened, :live_read
+    helper_method :live_fragment_opened, :live_fragment_read, :test_fragment_opened
+
+    def index
+      response.stream.write "streaming\n"
+      response.stream.write view_context.render(inline: "<% cache ['live', params[:page]] do %>" \
+        "<% live_fragment_opened %><%= params[:page] %><% live_fragment_read %><% end %>")
+    ensure
+      response.stream.close
+    end
+
+    private
+      def live_fragment_opened
+        live_opened << true
+        test_opened.pop(timeout: 5)
+      end
+
+      def live_fragment_read
+        live_read << true
+      end
+
+      def test_fragment_opened
+        test_opened << true
+        live_read.pop(timeout: 5)
+      end
+  end
+
+  tests LiveFragmentsController
+
+  setup do
+    def @controller.new_controller_thread(&block)
+      original_new_controller_thread(&block)
+    end
+
+    @log = StringIO.new
+    LiveFragmentsController.perform_caching = true
+    LiveFragmentsController.cache_store = ActiveSupport::Cache::MemoryStore.new
+    LiveFragmentsController.live_opened, LiveFragmentsController.test_opened, LiveFragmentsController.live_read = Queue.new, Queue.new, Queue.new
+  end
+
+  test "a fragment check does not share its frames between the request thread and a Live action's thread" do
+    ActionView::FragmentInputCoverage.with(action: :log) do
+      ActionView::Base.with(logger: ActiveSupport::Logger.new(@log)) do
+        render_test_fragment("<% cache 'before' do %><% end %>")
+
+        get :index, params: { page: "2" }
+        LiveFragmentsController.live_opened.pop(timeout: 5)
+
+        # The test fragment creates the Current instance it reads, while the Live fragment is open.
+        ActiveSupport::ExecutionContext.clear
+        render_test_fragment("<% cache ['test', 'x', nil] do %><%= ActionController::Parameters.new(t: 'x')[:t] %>" \
+          "<%= FragmentInputCoverageLiveTest::Current.user %><% test_fragment_opened %><% end %>")
+
+        assert_equal "streaming\n2", response.body
+      end
+    end
+
+    assert_no_match "The fragment cached", @log.string
+  end
+
+  private
+    def render_test_fragment(template)
+      controller = LiveFragmentsController.new
+      controller.view_context.render(inline: template)
+    end
+end

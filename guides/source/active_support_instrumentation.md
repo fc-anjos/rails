@@ -325,30 +325,40 @@ Additional keys may be added by the caller.
 #### `read_input.action_dispatch`
 
 Published each time the application reads request state that can differ from
-one user to another: the session, cookies, the flash, the CSRF token or the
-content security policy nonce. Writes are not published, and neither are the
-reads Rails makes itself, such as loading the session, committing it, verifying
-the CSRF token or generating the nonce for the `Content-Security-Policy` header.
+one user to another: the session, cookies, the flash, the CSRF token, the
+content security policy nonce or params. Writes are not published, and neither
+are the reads Rails makes itself, such as loading the session, committing it,
+verifying the CSRF token or generating the nonce for the
+`Content-Security-Policy` header.
 
 | Key        | Value                                                                              |
 | ---------- | ---------------------------------------------------------------------------------- |
-| `:request` | The [`ActionDispatch::Request`][] object                                           |
-| `:input`   | `:session`, `:cookies`, `:flash`, `:csrf_token` or `:csp_nonce`                    |
-| `:key`     | The session key, cookie name or flash key read, as a String, or `nil` for a read of the whole input |
+| `:request` | The [`ActionDispatch::Request`][] object, absent for reads of params built outside a controller |
+| `:input`   | `:session`, `:cookies`, `:flash`, `:csrf_token`, `:csp_nonce` or `:params`         |
+| `:key`     | The session key, cookie name, flash key or parameter name read, as a String, or `nil` for a read of the whole input |
+| `:value`   | The value the read returned, or `nil` for a read of the whole input, the CSRF token or the nonce |
 
 ```ruby
 {
   request: #<ActionDispatch::Request GET "http://localhost:3000/" for 127.0.0.1>,
   input: :session,
-  key: "user_id"
+  key: "user_id",
+  value: 1
 }
 ```
 
 `cookies.signed[:user_id]` and `cookies.encrypted[:user_id]` are published as
-a read of the `"user_id"` cookie. `session.id` is published with the key
-`"session_id"`. `flash[:notice]` and the `notice` helper are published as a
-read of the `"notice"` flash key; setting a message, including with
-`flash.now`, is not a read.
+a read of the `"user_id"` cookie, with the verified or decrypted value. `key?`
+and its aliases publish `true` or `false`. Reads of
+`ActionController::Parameters` are published for `[]`, `fetch`, `dig` (with the
+first key) and `key?` and its aliases, on any `Parameters` object. A read that
+returns nested parameters is not published, and the reads of the nested
+parameters are: `params[:post][:title]` is published as a read of `"title"`.
+Reading the authenticity token from the params to verify a request is not
+published. `session.id` is published with the key `"session_id"`.
+`flash[:notice]` and the `notice` helper are published as a read of the
+`"notice"` flash key; setting a message, including with `flash.now`, is not a
+read.
 
 #### `redirect.action_dispatch`
 

@@ -23,7 +23,10 @@ module ActionDispatch
       # lasts.
       def subscribe
         ActiveSupport::Notifications.subscribe(Request::READ_INPUT_EVENT) do |_name, _start, _finish, _id, payload|
-          record_read(payload[:request], payload[:input], payload[:key])
+          # Shared caches key responses on the URL, which holds the params.
+          unless payload[:input] == :params
+            record_read(payload[:request], payload[:input], payload[:key])
+          end
         end
       end
 

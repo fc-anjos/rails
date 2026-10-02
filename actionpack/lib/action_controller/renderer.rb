@@ -262,7 +262,7 @@ module ActionController
 
       def render_observing_current_attributes(instance, unprovided_inputs, *args, &block)
         if unprovided_inputs&.processing
-          on_read = ->(current, name) { unprovided_inputs.read_current_attribute(current, name) }
+          on_read = ->(current, name, _value) { unprovided_inputs.read_current_attribute(current, name) }
           ActiveSupport::CurrentAttributes.observing_reads(on_read) { instance.render_to_string(*args, &block) }
         else
           instance.render_to_string(*args, &block)

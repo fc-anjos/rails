@@ -435,6 +435,15 @@ class FlashIntegrationTest < ActionDispatch::IntegrationTest
     end
   end
 
+  def test_flash_reads_publish_read_input_events_with_the_value_read
+    with_test_route_set do
+      get "/set_flash"
+
+      values = capture_notifications("read_input.action_dispatch") { get "/read_whole_flash" }.map { |event| event.payload[:value] }
+      assert_equal [nil, nil, nil, true, nil], values
+    end
+  end
+
   def test_whole_flash_reads_and_keep_and_discard_publish_read_input_events
     with_test_route_set do
       get "/set_flash"

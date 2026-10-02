@@ -90,6 +90,8 @@ module ActionView
   end
 
   autoload :CacheExpiry
+  autoload :FragmentInputCoverage
+  autoload :UncoveredFragmentInputError, "action_view/fragment_input_coverage"
   autoload :TestCase
 
   singleton_class.attr_reader :render_tracker

@@ -4069,6 +4069,15 @@ module ApplicationTests
       assert_equal "config.action_dispatch.action_on_unsafe_public_cache must be false, :log or :raise, got true", error.message
     end
 
+    test "config.action_view.action_on_uncovered_fragment_input enables the fragment check" do
+      add_to_config "config.action_view.action_on_uncovered_fragment_input = :log"
+
+      app "development"
+
+      assert_equal :log, ActionView::FragmentInputCoverage.action
+      assert ActiveSupport::Notifications.notifier.listening?("read_input.action_dispatch")
+    end
+
     test "Rails.application.config.action_mailer.smtp_settings have open_timeout and read_timeout defined as 5 in 7.0 defaults" do
       remove_from_config '.*config\.load_defaults.*\n'
       add_to_config <<-RUBY

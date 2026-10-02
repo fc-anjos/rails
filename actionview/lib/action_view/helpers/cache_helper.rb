@@ -46,6 +46,10 @@ module ActionView
       # This will include both records as part of the cache key and updating either of them will
       # expire the cache.
       #
+      # To have Rails check that the key includes what the block read, such as session values,
+      # +params+, Current attributes or the locale, set
+      # <tt>config.action_view.action_on_uncovered_fragment_input</tt> to +:log+ or +:raise+.
+      #
       # ==== \Template digest
       #
       # The template digest that's added to the cache key is computed by taking an MD5 of the
@@ -177,7 +181,7 @@ module ActionView
         if controller.respond_to?(:perform_caching) && controller.perform_caching
           CachingRegistry.track_caching do
             name_options = options.slice(:skip_digest)
-            safe_concat(fragment_for(cache_fragment_name(name, **name_options), options, &block))
+            safe_concat(fragment_for(cache_fragment_name(name, **name_options), options, name, &block))
           end
         else
           yield
@@ -275,13 +279,13 @@ module ActionView
         end
       end
 
-      def fragment_for(name = {}, options = nil, &block)
+      def fragment_for(name = {}, options = nil, key = name, &block)
         if content = read_fragment_for(name, options)
           @view_renderer.cache_hits[@current_template&.virtual_path] = :hit if defined?(@view_renderer)
           content
         else
           @view_renderer.cache_hits[@current_template&.virtual_path] = :miss if defined?(@view_renderer)
-          write_fragment_for(name, options, &block)
+          write_fragment_for(name, options, key, &block)
         end
       end
 
@@ -289,8 +293,13 @@ module ActionView
         controller.read_fragment(name, options)
       end
 
-      def write_fragment_for(name, options, &block)
-        fragment = output_buffer.capture(&block)
+      def write_fragment_for(name, options, key = name, &block)
+        fragment = if FragmentInputCoverage.action
+          FragmentInputCoverage.check(key, @current_template, logger) { output_buffer.capture(&block) }
+        else
+          output_buffer.capture(&block)
+        end
+
         controller.write_fragment(name, fragment, options)
       end
 

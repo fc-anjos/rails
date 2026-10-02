@@ -19,6 +19,72 @@ class ParametersAccessorsTest < ActiveSupport::TestCase
     )
   end
 
+  test "keyed reads publish read_input events with the key and the value read" do
+    reads = capture_notifications("read_input.action_dispatch") do
+      @params[:person]
+      @params.fetch(:none, "default")
+      @params.dig(:person, :age)
+      @params.key?(:person)
+      @params.has_key?(:none)
+      @params.include?(:person)
+      @params.member?(:person)
+    end.map { |event| event.payload.values_at(:input, :key, :value) }
+
+    assert_equal [
+      [:params, "none", "default"],
+      [:params, "age", "32"],
+      [:params, "person", "32"],
+      [:params, "person", true],
+      [:params, "none", false],
+      [:params, "person", true],
+      [:params, "person", true]
+    ], reads
+  end
+
+  test "reads that return nested parameters publish only the reads of the nested parameters" do
+    reads = capture_notifications("read_input.action_dispatch") do
+      assert_equal "32", @params[:person][:age]
+      assert_equal "David", @params.fetch(:person).fetch(:name).fetch(:first)
+      @params.dig(:person, :name)
+    end.map { |event| event.payload.values_at(:key, :value) }
+
+    assert_equal [["age", "32"], ["first", "David"]], reads
+  end
+
+  test "keyed reads of a controller's params publish read_input events with its request" do
+    request = ActionDispatch::Request.empty
+    params = ActionController::Parameters.new({ page: "2", post: { title: "Hello" } }, { request: request })
+
+    events = capture_notifications("read_input.action_dispatch") do
+      params[:page]
+      params[:post][:title]
+    end
+
+    assert_equal [[:params, "page", "2"], [:params, "title", "Hello"]],
+      events.map { |event| event.payload.values_at(:input, :key, :value) }
+    assert events.all? { |event| event.payload[:request].equal?(request) }
+  end
+
+  test "keyed reads of a controller's params made while the framework reads publish nothing" do
+    request = ActionDispatch::Request.empty
+    params = ActionController::Parameters.new({ page: "2" }, { request: request })
+
+    events = capture_notifications("read_input.action_dispatch") do
+      request.reading_for_framework { params[:page] }
+    end
+
+    assert_empty events
+  end
+
+  test "keyed reads do not instrument without a subscriber" do
+    assert_not_called(ActiveSupport::Notifications, :instrument) do
+      assert_equal "32", @params[:person][:age]
+      assert_equal "32", @params.fetch(:person).fetch(:age)
+      assert_equal "32", @params.dig(:person, :age)
+      assert @params.key?(:person)
+    end
+  end
+
   test "each returns self" do
     assert_same @params, @params.each { |_| _ }
   end

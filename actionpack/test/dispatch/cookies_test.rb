@@ -95,6 +95,20 @@ class CookieJarTest < ActiveSupport::TestCase
     assert_equal [[:cookies, "foo"]] * 4 + [[:cookies, nil]] * 3, reads
   end
 
+  def test_reads_publish_read_input_events_with_the_value_read
+    request.cookie_jar["foo"] = "bar"
+
+    values = capture_notifications("read_input.action_dispatch") do
+      request.cookie_jar[:foo]
+      request.cookie_jar[:none]
+      request.cookie_jar.fetch(:none, "baz")
+      request.cookie_jar.key?(:foo)
+      request.cookie_jar.to_hash
+    end.map { |event| event.payload[:value] }
+
+    assert_equal ["bar", nil, "baz", true, nil], values
+  end
+
   def test_writes_publish_no_read_input_events
     reads = capture_reads do
       request.cookie_jar[:foo] = "bar"
@@ -648,18 +662,26 @@ class CookiesTest < ActionController::TestCase
     assert_equal "Jamie", controller_cookies.permanent[:user_name]
   end
 
-  def test_signed_and_encrypted_cookie_reads_publish_one_read_input_event_each
+  def test_signed_and_encrypted_cookie_reads_publish_one_read_input_event_each_with_the_value_read
     get :set_signed_cookie
     get :set_encrypted_cookie
+    controller_cookies[:tampered] = "tampered"
 
-    reads = capture_reads do
+    events = capture_notifications("read_input.action_dispatch") do
       assert_equal 45, controller_cookies.signed[:user_id]
       assert_equal "bar", controller_cookies.encrypted[:foo]
       assert_equal "bar", controller_cookies.signed_or_encrypted[:foo]
       assert_equal 45, controller_cookies.permanent.signed[:user_id]
+      assert_nil controller_cookies.signed[:tampered]
     end
 
-    assert_equal [[:cookies, "user_id"], [:cookies, "foo"], [:cookies, "foo"], [:cookies, "user_id"]], reads
+    assert_equal [
+      [:cookies, "user_id", 45],
+      [:cookies, "foo", "bar"],
+      [:cookies, "foo", "bar"],
+      [:cookies, "user_id", 45],
+      [:cookies, "tampered", nil]
+    ], events.map { |event| event.payload.values_at(:input, :key, :value) }
   end
 
   def test_signed_cookie_reads_in_an_action_publish_read_input_events
