@@ -46,7 +46,7 @@ module ActionDispatch # :nodoc:
         request = ActionDispatch::Request.new env
 
         if policy = request.content_security_policy
-          nonce = request.content_security_policy_nonce
+          nonce = request.reading_for_framework { request.content_security_policy_nonce }
           nonce_directives = request.content_security_policy_nonce_directives
           context = request.controller_instance || request
           headers[header_name(request)] = policy.build(context, nonce, nonce_directives)
@@ -111,6 +111,8 @@ module ActionDispatch # :nodoc:
 
       def content_security_policy_nonce
         if content_security_policy_nonce_generator
+          instrument_read_input(:csp_nonce)
+
           if nonce = get_header(NONCE)
             nonce
           else
@@ -121,7 +123,7 @@ module ActionDispatch # :nodoc:
 
       private
         def generate_content_security_policy_nonce
-          content_security_policy_nonce_generator.call(self)
+          reading_for_framework { content_security_policy_nonce_generator.call(self) }
         end
     end
 

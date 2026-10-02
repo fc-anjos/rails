@@ -1420,6 +1420,20 @@ class CookieCsrfTokenStorageStrategyControllerTest < ActionController::TestCase
     assert cookies.key?(:csrf_token)
   end
 
+  def test_form_authenticity_token_publishes_a_read_input_event_without_the_token_storage_reads
+    assert_equal [[:csrf_token, nil]], capture_reads { get :cookie }
+  end
+
+  def test_verifying_the_authenticity_token_publishes_no_read_input_events
+    initialize_csrf_token
+
+    reads = capture_reads do
+      assert_not_blocked { post :index, params: { custom_authenticity_token: @token } }
+    end
+
+    assert_equal [[:csrf_token, nil]], reads
+  end
+
   def test_csrf_token_is_stored_in_custom_cookie
     @controller.csrf_token_storage_strategy =
       ActionController::RequestForgeryProtection::CookieStore.new(:custom_cookie)

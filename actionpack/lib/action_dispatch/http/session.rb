@@ -86,7 +86,8 @@ module ActionDispatch
       end
 
       def id
-        options.id(@req)
+        @req.instrument_read_input(:session, "session_id")
+        current_id
       end
 
       def enabled?
@@ -115,9 +116,10 @@ module ActionDispatch
       def [](key)
         load_for_read!
         key = key.to_s
+        @req.instrument_read_input(:session, key)
 
         if key == "session_id"
-          id&.public_id
+          current_id&.public_id
         else
           @delegate[key]
         end
@@ -127,6 +129,7 @@ module ActionDispatch
       # any intermediate step is `nil`.
       def dig(*keys)
         load_for_read!
+        @req.instrument_read_input(:session, keys.first)
         keys = keys.map.with_index { |key, i| i.zero? ? key.to_s : key }
         @delegate.dig(*keys)
       end
@@ -134,6 +137,7 @@ module ActionDispatch
       # Returns true if the session has the given key or false.
       def has_key?(key)
         load_for_read!
+        @req.instrument_read_input(:session, key)
         @delegate.key?(key.to_s)
       end
       alias :key? :has_key?
@@ -142,12 +146,14 @@ module ActionDispatch
       # Returns keys of the session as Array.
       def keys
         load_for_read!
+        @req.instrument_read_input(:session)
         @delegate.keys
       end
 
       # Returns values of the session as Array.
       def values
         load_for_read!
+        @req.instrument_read_input(:session)
         @delegate.values
       end
 
@@ -167,6 +173,7 @@ module ActionDispatch
       # Returns the session as Hash.
       def to_hash
         load_for_read!
+        @req.instrument_read_input(:session)
         @delegate.dup.delete_if { |_, v| v.nil? }
       end
       alias :to_h :to_hash
@@ -213,6 +220,7 @@ module ActionDispatch
       #     # => :bar
       def fetch(key, default = Unspecified, &block)
         load_for_read!
+        @req.instrument_read_input(:session, key)
         if default == Unspecified
           @delegate.fetch(key.to_s, &block)
         else
@@ -231,7 +239,7 @@ module ActionDispatch
       def exists?
         return false unless enabled?
         return @exists unless @exists.nil?
-        @exists = @by.send(:session_exists?, @req)
+        @exists = @req.reading_for_framework { @by.send(:session_exists?, @req) }
       end
 
       def loaded?
@@ -240,6 +248,7 @@ module ActionDispatch
 
       def empty?
         load_for_read!
+        @req.instrument_read_input(:session)
         @delegate.empty?
       end
 
@@ -249,6 +258,7 @@ module ActionDispatch
 
       def id_was
         load_for_read!
+        @req.instrument_read_input(:session, "session_id")
         @id_was
       end
 
@@ -272,13 +282,17 @@ module ActionDispatch
         def load!
           if enabled?
             @id_was_initialized = true unless exists?
-            id, session = @by.load_session @req
+            id, session = @req.reading_for_framework { @by.load_session @req }
             options[:id] = id
             @delegate.replace(session.stringify_keys)
             @id_was = id unless @id_was_initialized
           end
           @id_was_initialized = true
           @loaded = true
+        end
+
+        def current_id
+          @req.reading_for_framework { options.id(@req) }
         end
     end
   end

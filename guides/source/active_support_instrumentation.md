@@ -322,6 +322,34 @@ Additional keys may be added by the caller.
 | ------------- | ---------------------- |
 | `:middleware` | Name of the middleware |
 
+#### `read_input.action_dispatch`
+
+Published each time the application reads request state that can differ from
+one user to another: the session, cookies, the flash, the CSRF token or the
+content security policy nonce. Writes are not published, and neither are the
+reads Rails makes itself, such as loading the session, committing it, verifying
+the CSRF token or generating the nonce for the `Content-Security-Policy` header.
+
+| Key        | Value                                                                              |
+| ---------- | ---------------------------------------------------------------------------------- |
+| `:request` | The [`ActionDispatch::Request`][] object                                           |
+| `:input`   | `:session`, `:cookies`, `:flash`, `:csrf_token` or `:csp_nonce`                    |
+| `:key`     | The session key, cookie name or flash key read, as a String, or `nil` for a read of the whole input |
+
+```ruby
+{
+  request: #<ActionDispatch::Request GET "http://localhost:3000/" for 127.0.0.1>,
+  input: :session,
+  key: "user_id"
+}
+```
+
+`cookies.signed[:user_id]` and `cookies.encrypted[:user_id]` are published as
+a read of the `"user_id"` cookie. `session.id` is published with the key
+`"session_id"`. `flash[:notice]` and the `notice` helper are published as a
+read of the `"notice"` flash key; setting a message, including with
+`flash.now`, is not a read.
+
 #### `redirect.action_dispatch`
 
 | Key         | Value                                    |

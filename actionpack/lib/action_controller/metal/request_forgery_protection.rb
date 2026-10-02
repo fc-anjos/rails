@@ -489,7 +489,7 @@ module ActionController # :nodoc:
 
     def commit_csrf_token(request) # :doc:
       csrf_token = request.env[CSRF_TOKEN]
-      csrf_token_storage_strategy.store(request, csrf_token) unless csrf_token.nil?
+      request.reading_for_framework { csrf_token_storage_strategy.store(request, csrf_token) } unless csrf_token.nil?
     end
 
     private
@@ -713,6 +713,7 @@ module ActionController # :nodoc:
 
       # Creates the authenticity token for the current request.
       def form_authenticity_token(form_options: {}) # :doc:
+        request.instrument_read_input(:csrf_token)
         masked_authenticity_token(form_options: form_options)
       end
 
@@ -801,7 +802,7 @@ module ActionController # :nodoc:
 
       def real_csrf_token(_session = nil) # :doc:
         csrf_token = request.env.fetch(CSRF_TOKEN) do
-          request.env[CSRF_TOKEN] = csrf_token_storage_strategy.fetch(request) || generate_csrf_token
+          request.env[CSRF_TOKEN] = request.reading_for_framework { csrf_token_storage_strategy.fetch(request) } || generate_csrf_token
         end
 
         decode_csrf_token(csrf_token)

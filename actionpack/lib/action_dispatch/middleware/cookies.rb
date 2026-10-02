@@ -214,6 +214,7 @@ module ActionDispatch
     COOKIES_ROTATIONS = "action_dispatch.cookies_rotations"
     COOKIES_SAME_SITE_PROTECTION = "action_dispatch.cookies_same_site_protection"
     USE_COOKIES_WITH_METADATA = "action_dispatch.use_cookies_with_metadata"
+    ACTION_ON_UNSAFE_PUBLIC_CACHE = "action_dispatch.action_on_unsafe_public_cache"
 
     # Cookies can typically store 4096 bytes.
     MAX_COOKIE_SIZE = 4096
@@ -344,19 +345,23 @@ module ActionDispatch
       end
 
       def each(&block)
+        @request.instrument_read_input(:cookies)
         @cookies.each(&block)
       end
 
       # Returns the value of the cookie by `name`, or `nil` if no such cookie exists.
       def [](name)
+        @request.instrument_read_input(:cookies, name)
         @cookies[name.to_s]
       end
 
       def fetch(name, *args, &block)
+        @request.instrument_read_input(:cookies, name)
         @cookies.fetch(name.to_s, *args, &block)
       end
 
       def key?(name)
+        @request.instrument_read_input(:cookies, name)
         @cookies.key?(name.to_s)
       end
       alias :has_key? :key?
@@ -721,7 +726,22 @@ module ActionDispatch
         end
       end
 
-      response.to_a
+      response = response.to_a
+
+      if action = request.get_header(ACTION_ON_UNSAFE_PUBLIC_CACHE)
+        check_public_cache(request, action, response)
+      end
+
+      response
     end
+
+    private
+      def check_public_cache(request, action, response)
+        _, headers, body = response
+        PublicCacheCheck.check(request, action, headers)
+      rescue UnsafePublicCacheError
+        body.close if body.respond_to?(:close)
+        raise
+      end
   end
 end

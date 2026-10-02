@@ -78,6 +78,33 @@ class CookieJarTest < ActiveSupport::TestCase
     request.cookie_jar.write(headers)
     assert_not_includes headers, "Set-Cookie"
   end
+
+  def test_reads_publish_read_input_events
+    request.cookie_jar["foo"] = "bar"
+
+    reads = capture_reads do
+      request.cookie_jar[:foo]
+      request.cookie_jar.fetch(:foo)
+      request.cookie_jar.key?(:foo)
+      request.cookie_jar.has_key?(:foo)
+      request.cookie_jar.each { }
+      request.cookie_jar.to_hash
+      request.cookie_jar.map { }
+    end
+
+    assert_equal [[:cookies, "foo"]] * 4 + [[:cookies, nil]] * 3, reads
+  end
+
+  def test_writes_publish_no_read_input_events
+    reads = capture_reads do
+      request.cookie_jar[:foo] = "bar"
+      request.cookie_jar[:bar] = "baz"
+      request.cookie_jar.delete(:foo)
+      request.cookie_jar.write(Rack::Response.new)
+    end
+
+    assert_empty reads
+  end
 end
 
 class CookiesMiddlewareTest < ActiveSupport::TestCase
@@ -93,6 +120,15 @@ class CookiesMiddlewareTest < ActiveSupport::TestCase
     ).call(env)
 
     assert_equal "foo=bar; path=/", headers["set-cookie"]
+  end
+
+  def test_writing_cookies_publishes_no_read_input_events
+    request = ActionDispatch::Request.empty
+    request.cookie_jar[:foo] = "bar"
+    env = Rack::MockRequest.env_for("", request.env)
+    app = ActionDispatch::Cookies.new(lambda { |_env| [ 200, {}, [] ] })
+
+    assert_no_notifications("read_input.action_dispatch") { app.call(env) }
   end
 
   def test_http_header_constant_is_deprecated
@@ -610,6 +646,26 @@ class CookiesTest < ActionController::TestCase
   def test_read_permanent_cookie
     get :set_permanent_cookie
     assert_equal "Jamie", controller_cookies.permanent[:user_name]
+  end
+
+  def test_signed_and_encrypted_cookie_reads_publish_one_read_input_event_each
+    get :set_signed_cookie
+    get :set_encrypted_cookie
+
+    reads = capture_reads do
+      assert_equal 45, controller_cookies.signed[:user_id]
+      assert_equal "bar", controller_cookies.encrypted[:foo]
+      assert_equal "bar", controller_cookies.signed_or_encrypted[:foo]
+      assert_equal 45, controller_cookies.permanent.signed[:user_id]
+    end
+
+    assert_equal [[:cookies, "user_id"], [:cookies, "foo"], [:cookies, "foo"], [:cookies, "user_id"]], reads
+  end
+
+  def test_signed_cookie_reads_in_an_action_publish_read_input_events
+    get :set_signed_cookie
+
+    assert_equal [[:cookies, "user_id"]], capture_reads { get :get_signed_cookie }
   end
 
   def test_signed_cookie_using_default_digest

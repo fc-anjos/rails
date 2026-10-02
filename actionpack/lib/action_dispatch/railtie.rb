@@ -39,6 +39,7 @@ module ActionDispatch
     config.action_dispatch.ignore_leading_brackets = nil
     config.action_dispatch.strict_query_string_separator = nil
     config.action_dispatch.verbose_redirect_logs = false
+    config.action_dispatch.action_on_unsafe_public_cache = false
 
     config.action_dispatch.default_headers = {
       "X-Frame-Options" => "SAMEORIGIN",
@@ -103,6 +104,16 @@ module ActionDispatch
 
       ActionDispatch::Http::Cache::Request.strict_freshness = app.config.action_dispatch.strict_freshness
       ActionDispatch.test_app = app
+    end
+
+    initializer "action_dispatch.check_public_cache" do |app|
+      action = app.config.action_dispatch.action_on_unsafe_public_cache
+
+      unless [false, nil, :log, :raise].include?(action)
+        raise ArgumentError, "config.action_dispatch.action_on_unsafe_public_cache must be false, :log or :raise, got #{action.inspect}"
+      end
+
+      ActionDispatch::PublicCacheCheck.subscribe if action
     end
 
     initializer "action_dispatch.share_configs" do

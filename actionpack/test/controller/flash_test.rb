@@ -303,6 +303,25 @@ class FlashIntegrationTest < ActionDispatch::IntegrationTest
         render inline: "maybe flash"
       end
     end
+
+    def read_session
+      render plain: session[:foo].inspect
+    end
+
+    def read_whole_flash
+      render plain: [flash.keys, flash.to_hash, flash.empty?, flash.key?(:that), notice].inspect
+    end
+
+    def keep_and_discard_flash
+      flash.keep
+      flash.discard(:that)
+      head :ok
+    end
+
+    def assign_and_read_flash
+      request.flash = ActionDispatch::Flash::FlashHash.new(notice: "assigned")
+      render plain: flash[:notice]
+    end
   end
 
   def test_flash
@@ -404,6 +423,32 @@ class FlashIntegrationTest < ActionDispatch::IntegrationTest
 
     assert_includes controller.private_methods, :alert
     assert_includes controller.private_methods, :notice
+  end
+
+  def test_flash_reads_publish_read_input_events_and_writes_loading_and_committing_do_not
+    with_test_route_set do
+      assert_empty capture_reads { get "/set_flash" }
+      assert_equal [[:session, "foo"]], capture_reads { get "/read_session" }
+      assert_equal [[:flash, "that"]], capture_reads { get "/use_flash" }
+      assert_empty capture_reads { get "/set_flash_now" }
+      assert_equal [[:flash, "bar"]], capture_reads { get "/set_bar" }
+    end
+  end
+
+  def test_whole_flash_reads_and_keep_and_discard_publish_read_input_events
+    with_test_route_set do
+      get "/set_flash"
+
+      assert_equal [[:flash, nil], [:flash, nil], [:flash, nil], [:flash, "that"], [:flash, "notice"]], capture_reads { get "/read_whole_flash" }
+      assert_equal [[:flash, nil], [:flash, "that"]], capture_reads { get "/keep_and_discard_flash" }
+    end
+  end
+
+  def test_reads_of_an_assigned_flash_publish_read_input_events
+    with_test_route_set do
+      assert_equal [[:flash, "notice"]], capture_reads { get "/assign_and_read_flash" }
+      assert_equal "assigned", response.body
+    end
   end
 
   private

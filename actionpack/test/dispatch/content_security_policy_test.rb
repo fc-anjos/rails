@@ -839,3 +839,68 @@ class HelpersContentSecurityPolicyIntegrationTest < ActionDispatch::IntegrationT
     assert_match "style-src https://example.com", response.headers["Content-Security-Policy"]
   end
 end
+
+class ReadInputContentSecurityPolicyIntegrationTest < ActionDispatch::IntegrationTest
+  class PolicyController < ActionController::Base
+    def index
+      head :ok
+    end
+
+    def nonce
+      render inline: "<%= javascript_tag nonce: true do %>alert(1)<% end %><%= content_security_policy_nonce %>"
+    end
+  end
+
+  ROUTES = ActionDispatch::Routing::RouteSet.new
+  ROUTES.draw do
+    scope module: "read_input_content_security_policy_integration_test" do
+      get "/", to: "policy#index"
+      get "/nonce", to: "policy#nonce"
+    end
+  end
+
+  POLICY = ActionDispatch::ContentSecurityPolicy.new do |p|
+    p.script_src :self
+  end
+
+  class PolicyConfigMiddleware
+    def initialize(app)
+      @app = app
+    end
+
+    def call(env)
+      env["action_dispatch.content_security_policy"] = POLICY
+      env["action_dispatch.content_security_policy_nonce_generator"] = ->(request) { request.session[:nonce_seed] || "iyhD0Yc0W+c=" }
+      env["action_dispatch.content_security_policy_report_only"] = false
+      env["action_dispatch.show_exceptions"] = :none
+
+      @app.call(env)
+    end
+  end
+
+  APP = build_app(ROUTES) do |middleware|
+    middleware.use PolicyConfigMiddleware
+    middleware.use ActionDispatch::ContentSecurityPolicy::Middleware
+  end
+
+  def app
+    APP
+  end
+
+  def test_generating_the_nonce_for_the_header_publishes_no_read_input_events
+    assert_no_notifications("read_input.action_dispatch") { get "/" }
+
+    assert_equal "script-src 'self' 'nonce-iyhD0Yc0W+c='", response.headers["Content-Security-Policy"]
+  end
+
+  def test_reading_the_nonce_publishes_a_read_input_event_per_call
+    reads = capture_reads { get "/nonce" }
+
+    assert_match "iyhD0Yc0W+c=", response.body
+    assert_equal [[:csp_nonce, nil]] * 2, reads
+  end
+
+  def test_reading_the_nonce_without_a_nonce_generator_publishes_no_read_input_event
+    assert_no_notifications("read_input.action_dispatch") { ActionDispatch::Request.empty.content_security_policy_nonce }
+  end
+end

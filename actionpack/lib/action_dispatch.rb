@@ -78,6 +78,7 @@ module ActionDispatch
     autoload :ExceptionWrapper
     autoload :Executor
     autoload :Flash
+    autoload :PublicCacheCheck
     autoload :PublicExceptions
     autoload :Reloader
     autoload :RemoteIp
@@ -85,6 +86,7 @@ module ActionDispatch
     autoload :ShowExceptions
     autoload :SSL
     autoload :Static
+    autoload :UnsafePublicCacheError, "action_dispatch/middleware/public_cache_check"
   end
 
   autoload :Constants
