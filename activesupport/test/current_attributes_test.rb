@@ -331,6 +331,175 @@ class CurrentAttributesTest < ActiveSupport::TestCase
   end
 
 
+  test "provided_attribute? is true while a set block names the attribute" do
+    assert_not Current.provided_attribute?(:world)
+
+    Current.set(world: "world/1") do
+      assert Current.provided_attribute?(:world)
+      assert_not Current.provided_attribute?(:account)
+
+      Current.set(account: "account/1") do
+        assert Current.provided_attribute?(:world)
+        assert Current.provided_attribute?(:account)
+      end
+
+      assert_not Current.provided_attribute?(:account)
+    end
+
+    Current.set("world" => "world/2") { assert Current.provided_attribute?(:world) }
+    assert_not Current.provided_attribute?(:world)
+  end
+
+  test "provided_attribute? is false after a set block raises" do
+    assert_raises(RuntimeError) do
+      Current.set(world: "world/1") { raise "boom" }
+    end
+
+    assert_not Current.provided_attribute?(:world)
+  end
+
+  test "provided_attribute? leaves out the set blocks opened before opened_set_blocks was called" do
+    Current.set(world: "world/1") do
+      opened = ActiveSupport::CurrentAttributes.opened_set_blocks
+
+      assert Current.provided_attribute?(:world)
+      assert_not Current.provided_attribute?(:world, opened_after: opened)
+
+      Current.set(account: "account/1") do
+        assert Current.provided_attribute?(:account, opened_after: opened)
+        assert_not Current.provided_attribute?(:world, opened_after: opened)
+      end
+
+      Current.set(world: "world/2") { assert Current.provided_attribute?(:world, opened_after: opened) }
+      Session.set(current: 42) { assert Session.provided_attribute?(:current, opened_after: opened) }
+    end
+  end
+
+  test "opened_set_blocks counts the set blocks opened on the thread" do
+    opened = ActiveSupport::CurrentAttributes.opened_set_blocks
+
+    Current.set(world: "world/1") { Session.set(current: 42) { } }
+    assert_equal opened + 2, ActiveSupport::CurrentAttributes.opened_set_blocks
+
+    assert_equal 0, Thread.new { ActiveSupport::CurrentAttributes.opened_set_blocks }.value
+  end
+
+  test "observing_reads reports reads of attributes that differ from their defaults" do
+    Current.world = "world/1"
+    Current.counter_integer = 0
+    Current.counter_callable = 1
+    Session.current = 42
+
+    reads = observe_reads do
+      assert_equal "world/1", Current.world
+      assert_equal 0, Current.counter_integer
+      assert_equal 1, Current.counter_callable
+      assert_nil Current.account
+      assert_equal 42, Session.current
+      assert_nil Session.previous
+    end
+
+    assert_equal [[Current, :world], [Current, :counter_callable], [Session, :current]], reads
+  end
+
+  test "observing_reads reports every observed attribute when reading all attributes" do
+    Current.world = "world/1"
+
+    reads = observe_reads { Current.attributes }
+
+    assert_equal [[Current, :world]], reads
+  end
+
+  test "observing_reads does not report an attribute after the block writes it, nor reads after the block" do
+    world = Current.world = +"world/1"
+
+    reads = observe_reads do
+      Current.world = "world/2"
+      assert_equal "world/2", Current.world
+    end
+    assert_equal "world/2", Current.world
+
+    Current.world = world
+    Current.world
+    assert_empty reads
+  end
+
+  test "observing_reads does not report what a set block in the block provides, and reports the original once it closes" do
+    Current.world = "world/1"
+
+    reads = observe_reads do
+      Current.set(world: "world/2") { assert_equal "world/2", Current.world }
+      assert_equal "world/1", Current.world
+    end
+
+    # Current.set reads the value it puts back once the block closes.
+    assert_equal [[Current, :world]] * 2, reads
+  end
+
+  test "observing_reads reports an attribute again once the block writes its original value back" do
+    world = Current.world = +"world/1"
+
+    reads = observe_reads do
+      Current.world = "world/2"
+      Current.world
+      Current.world = world
+      Current.world
+    end
+
+    assert_equal [[Current, :world]], reads
+  end
+
+  test "observing_reads does not observe instances created in the block" do
+    reads = observe_reads do
+      Session.current = 42
+      Session.current
+    end
+
+    assert_empty reads
+  end
+
+  test "observing_reads keeps what a reset in the block installs" do
+    world = Current.world = +"world/1"
+
+    reads = observe_reads do
+      Current.reset
+      Current.world
+    end
+    assert_nil Current.world
+
+    Current.world = world
+    Current.world
+    assert_empty reads
+  end
+
+  test "observing_reads stops observing, keeping the writes, when the block raises" do
+    Current.world = "world/1"
+    reads = []
+
+    assert_raises(RuntimeError) do
+      ActiveSupport::CurrentAttributes.observing_reads(->(current, name) { reads << name }) do
+        Current.account = "account/1"
+        raise "boom"
+      end
+    end
+
+    assert_equal "account/1", Current.account
+    assert_equal "world/1", Current.world
+    assert_empty reads
+  end
+
+  test "observing_reads is a no-op when nested" do
+    Current.world = "world/1"
+    inner_reads = nil
+
+    outer_reads = observe_reads do
+      inner_reads = observe_reads { Current.world }
+    end
+
+    assert_empty inner_reads
+    assert_equal [[Current, :world]], outer_reads
+  end
+
   test "restoring_writes sets back what the block writes, through the writers" do
     Current.world = "world/1"
     Current.person = Person.new(7, "david", "Europe/Lisbon")
@@ -567,5 +736,12 @@ class CurrentAttributesTest < ActiveSupport::TestCase
       ActiveSupport::CurrentAttributes.restoring_writes do
         ActiveSupport::ExecutionContext.isolated(&block)
       end
+    end
+
+    def observe_reads(&block)
+      reads = []
+      on_read = ->(current, name) { reads << [current.class, name] }
+      ActiveSupport::CurrentAttributes.observing_reads(on_read, &block)
+      reads
     end
 end

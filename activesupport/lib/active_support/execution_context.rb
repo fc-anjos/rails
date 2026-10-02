@@ -82,6 +82,12 @@ module ActiveSupport
         @after_change_callbacks.each(&:call)
       end
 
+      def [](key)
+        if current_record = IsolatedExecutionState[:active_support_execution_context]
+          current_record.store[key.to_sym]
+        end
+      end
+
       def to_h
         record.store.dup
       end

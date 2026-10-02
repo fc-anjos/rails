@@ -193,8 +193,12 @@ module ActionCable
 
         if processable_action?(action)
           payload = { channel_class: self.class.name, action: action, data: data }
-          ActiveSupport::Notifications.instrument("perform_action.action_cable", payload) do
-            dispatch_action(action, data)
+          processing_command(action) do |command|
+            command.reach_action_line(self, action)
+
+            ActiveSupport::Notifications.instrument("perform_action.action_cable", payload) do
+              dispatch_action(action, data)
+            end
           end
         else
           logger.error "Unable to process #{action_signature(action, data)}"
@@ -204,8 +208,11 @@ module ActionCable
       # This method is called after subscription has been added to the connection and
       # confirms or rejects the subscription.
       def subscribe_to_channel
-        run_callbacks :subscribe do
-          subscribed unless subscription_rejected?
+        processing_command(:subscribed) do |command|
+          run_callbacks :subscribe do
+            command.reach_action_line(self, :subscribed)
+            subscribed unless subscription_rejected?
+          end
         end
 
         reject_subscription if subscription_rejected?
@@ -218,8 +225,11 @@ module ActionCable
       # the user. Instead, override the #unsubscribed callback.
       def unsubscribe_from_channel # :nodoc:
         @unsubscribed = true
-        run_callbacks :unsubscribe do
-          unsubscribed
+        processing_command(:unsubscribed) do |command|
+          run_callbacks :unsubscribe do
+            command.reach_action_line(self, :unsubscribed)
+            unsubscribed
+          end
         end
       end
 
@@ -309,6 +319,25 @@ module ActionCable
           end
         rescue Exception => exception
           rescue_with_handler(exception) || raise
+        end
+
+        # Yields the command the connection is processing, or, outside of one, such
+        # as when the connection closes or in a channel test, a command of its own,
+        # so that renders through ActionController::Renderer made in the block are
+        # checked as made in +action+.
+        def processing_command(action)
+          if command = Connection::ChannelCommand.current
+            yield command
+          else
+            command = Connection::ChannelCommand.new(channel: self, action: action)
+            Connection::ChannelCommand.current = command
+
+            begin
+              yield command
+            ensure
+              Connection::ChannelCommand.current = nil
+            end
+          end
         end
 
         def action_signature(action, data)
