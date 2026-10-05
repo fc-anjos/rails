@@ -193,6 +193,79 @@ To keep the previous behavior, set:
 Rails.application.config.active_job.isolate_inline_jobs = false
 ```
 
+### Renders through `ActionController::Renderer` start with empty `Current` attributes
+
+With the 8.2 framework defaults, a render through `ActionController::Renderer`,
+such as `ApplicationController.render` or a Turbo Stream broadcast, runs with
+its own `ActiveSupport::CurrentAttributes`, as a job performed by a queue does.
+Its output is not the response to the request, and a broadcast sends the same
+HTML to every subscriber, so it no longer renders with the requesting user's
+`Current.user`. This applies to a `Current.set` block around the render too.
+What the render writes to `Current` is discarded when it ends. `Time.zone`,
+`I18n.locale` and the URL options Active Storage builds blob URLs from stay the
+caller's.
+
+With `action_on_unprovided_renderer_input = :raise`, also in the 8.2 defaults,
+a render that reads a `Current` attribute its caller had set raises
+`ActionController::Renderer::UnprovidedInputError`, as does one that reads a
+session, cookies or flash it was not given. An application that rendered a
+broadcast during an action, or wrapped one in `Current.set`, sees this error in
+the tests that perform that action, for each partial that reads `Current`:
+
+```
+`Current.account` was read by a render of `messages/message` through
+ActionController::Renderer, which renders with `Current` attributes of its own,
+so it read `nil` or the attribute's default. [...] Pass the values it needs as
+locals, for example `locals: { account: ... }`, and read them in place of
+`Current.account`.
+```
+
+Pass the values the partial needs as locals, as a broadcast performed by a job
+already requires:
+
+```ruby
+# Before
+Current.set(account: message.account) do
+  message.broadcast_replace_to message.room
+end
+```
+
+```erb
+<%# app/views/messages/_message.html.erb %>
+<%= message.body %>
+<% if Current.user&.admin? %><%= button_to "Delete", message, method: :delete %><% end %>
+<%= Current.account.name %>
+```
+
+```ruby
+# After
+message.broadcast_replace_to message.room,
+  locals: { message: message, account: message.account, viewer: nil }
+```
+
+```erb
+<%# app/views/messages/_message.html.erb %>
+<%= message.body %>
+<% if viewer&.admin? %><%= button_to "Delete", message, method: :delete %><% end %>
+<%= account.name %>
+```
+
+The page rendering the same partial passes `viewer: Current.user`. A partial
+that reads `Current.user` only to decide what a signed-in user sees renders the
+signed-out markup in the broadcast, which is safe, but it is still reported, as
+the render reads state it does not have; pass `viewer: nil` to make that
+explicit.
+
+To find these renders before switching, enable
+`renderer_isolates_current_attributes` with
+`action_on_unprovided_renderer_input = :log`, and read the warnings. To keep
+the previous behavior, set:
+
+```ruby
+Rails.application.config.action_controller.renderer_isolates_current_attributes = false
+Rails.application.config.action_controller.action_on_unprovided_renderer_input = :log
+```
+
 ### The old Active Record 6.1 marshalling format was removed.
 
 If your application still sets `active_record.marshalling_format_version = 6.1`, which may

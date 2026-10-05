@@ -78,9 +78,7 @@ module ActiveJob
   # context of its own when isolate_inline_jobs is enabled.
   def self.perform_inline(&block) # :nodoc:
     if isolate_inline_jobs
-      ActiveSupport::CurrentAttributes.restoring_writes do
-        ActiveSupport::ExecutionContext.isolated(&block)
-      end
+      ActiveSupport::CurrentAttributes::Isolation.run(&block)
     else
       yield
     end

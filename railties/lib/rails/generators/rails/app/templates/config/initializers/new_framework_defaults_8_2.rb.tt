@@ -69,6 +69,39 @@
 # Rails.application.config.action_controller.default_protect_from_forgery_with = :exception
 
 ###
+# Raise when a render through `ActionController::Renderer` reads an input it was
+# not given.
+#
+# `ApplicationController.render` and Turbo Stream broadcasts render outside of
+# a request, and their output may be sent to other users. Such a render reads
+# `nil` from a session, cookies or flash that were not passed in its env, so a
+# partial calling `current_user` or `authenticated?` renders its signed-out
+# markup, and `cookies.signed` raises `NoMethodError`. With
+# `renderer_isolates_current_attributes` enabled, reading a `Current` attribute
+# the caller had set is reported too. Pass such a render what it needs as
+# locals.
+#
+# The previous default, `:log`, logs a warning for each such read. Set it to
+# `:notify` to receive an `unprovided_renderer_input.action_controller`
+# notification with a stack trace for each one.
+#++
+# Rails.application.config.action_controller.action_on_unprovided_renderer_input = :raise
+
+###
+# Render through `ActionController::Renderer` with `Current` attributes of its
+# own.
+#
+# A broadcast made during an action renders once and sends the HTML to every
+# subscriber. With the previous default, `false`, it reads the request's
+# `Current.user` and sends that user's markup to everyone, and the attributes it
+# writes stay set after it. When enabled, the render starts with empty `Current`
+# attributes, as a job performed by a queue does, also inside a `Current.set`
+# block, and the caller's are put back when it ends. `Time.zone` and
+# `I18n.locale` stay the caller's. Pass the render what it needs as locals.
+#++
+# Rails.application.config.action_controller.renderer_isolates_current_attributes = true
+
+###
 # Remove the default X-XSS-Protection headers since all browsers have removed support for it years ago.
 #++
 # Rails.application.config.action_dispatch.default_headers = {

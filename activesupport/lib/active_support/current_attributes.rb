@@ -103,11 +103,12 @@ module ActiveSupport
     # Holds, while CurrentAttributes.restoring_writes runs, the attribute values
     # the caller's instances had as the block started and those each instance
     # created in the block was created with, and puts the caller's values back
-    # once it ends.
+    # once it ends. When the block runs on instances of its own, the caller's
+    # are not touched, and their values are read as the block ends instead.
     class Restoration # :nodoc:
-      def initialize(instances)
+      def initialize(instances, snapshot)
         @instances = instances
-        @values = instances.transform_values { |instance| instance.__send__(:attribute_values) }
+        @values = instances.transform_values { |instance| instance.__send__(:attribute_values) } if snapshot
         @created = nil
       end
 
@@ -117,17 +118,26 @@ module ActiveSupport
 
       def restore
         @created&.reverse_each do |key, instance, values|
-          if caller_values = @values[key]
+          if caller_values = caller_values(key)
             @instances[key].__send__(:restore_attribute_values, caller_values, instance)
           else
             instance.__send__(:restore_attribute_values, values)
           end
         end
 
-        @values.each do |key, values|
+        @values&.each do |key, values|
           @instances[key].__send__(:restore_attribute_values, values)
         end
       end
+
+      private
+        def caller_values(key)
+          if @values
+            @values[key]
+          else
+            @instances[key]&.__send__(:attribute_values)
+          end
+        end
     end
 
     class << self
@@ -209,12 +219,16 @@ module ActiveSupport
       # block's instance, to the values that instance was created with, and the
       # instance is discarded. No reset callbacks run, and a writer that cannot
       # take the caller's value raises, as at the end of a #set block.
-      def restoring_writes # :nodoc:
+      #
+      # Pass +isolated+ when the block runs inside ExecutionContext.isolated: the
+      # caller's instances are then not snapshotted, as the block cannot reach
+      # them.
+      def restoring_writes(isolated: false) # :nodoc:
         instances = current_instances
-        restoration = Restoration.new(instances)
+        restoration = Restoration.new(instances, !isolated)
         outer_restoration = IsolatedExecutionState[:active_support_current_attributes_restoration]
         IsolatedExecutionState[:active_support_current_attributes_restoration] = restoration
-        ExecutionContext.current_attributes_instances = instances.dup
+        ExecutionContext.current_attributes_instances = instances.dup unless isolated
 
         yield
       ensure
@@ -241,6 +255,7 @@ module ActiveSupport
         def create_instance
           instance = new
           IsolatedExecutionState[:active_support_current_attributes_restoration]&.created(current_instances_key, instance)
+          Isolation.created(current_instances_key, instance)
           instance
         end
 
@@ -304,6 +319,37 @@ module ActiveSupport
     end
 
     private
+      # Copies the values, not through the writers: the caller's writers
+      # already ran for them.
+      def receive_attribute_values(source, names)
+        source_attributes = source.__send__(:stored_attributes)
+        names.each do |name|
+          @attributes[name] = source_attributes[name] if source_attributes.key?(name)
+        end
+      end
+
+      def stored_attributes
+        @attributes
+      end
+
+      def watch_dropped_reads(names, on_dropped_read)
+        @attributes = Isolation::DroppedAttributes.new(self, @attributes, names, on_dropped_read)
+      end
+
+      def attribute_names_changed_from_defaults
+        @attributes.filter_map do |name, value|
+          default = defaults.fetch(name, NOT_SET)
+          default_value =
+            if Proc === default
+              default.call
+            elsif default != NOT_SET
+              default
+            end
+
+          name unless value == default_value
+        end
+      end
+
       def attribute_values
         {}.update(@attributes)
       end
@@ -344,3 +390,5 @@ module ActiveSupport
       INVALID_ATTRIBUTE_NAMES = (methods(false) + private_methods(false) + instance_methods(false) + private_instance_methods(false)).uniq.sort.freeze # :nodoc:
   end
 end
+
+require "active_support/current_attributes/isolation"

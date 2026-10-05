@@ -1,3 +1,27 @@
+*   Render through `ActionController::Renderer` with `Current` attributes of its own.
+
+    With `config.action_controller.renderer_isolates_current_attributes`
+    enabled, `ApplicationController.render` and Turbo Stream broadcasts start
+    with empty `ActiveSupport::CurrentAttributes`, as a job performed by a queue
+    does, so a broadcast made during an action, or inside a `Current.set`
+    block, no longer renders with the caller's `Current.user` for every
+    subscriber. What the render writes is discarded, and the caller's
+    attributes are put back. Pass the render what it needs as locals:
+
+    ```ruby
+    message.broadcast_replace_to message.room, locals: { message: message, viewer: nil }
+    ```
+
+    `config.action_controller.action_on_unprovided_renderer_input` (`:log`,
+    `:notify`, `:raise` or `false`) reports reads of a session, cookies or flash
+    the render was not given, including `cookies.signed` and
+    `cookies.encrypted` before they raise `NoMethodError`, and, with isolation
+    enabled, reads of a `Current` attribute its caller had set.
+
+    `load_defaults "8.2"` enables isolation and sets `:raise`.
+
+    *Felipe Cavalheiro Anjos*
+
 *   Remove support for dynamic `:controller` and `:action` route segments.
 
     A route may no longer read the controller or the action out of the URL:
