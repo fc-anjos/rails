@@ -215,6 +215,14 @@ class RendererTest < ActiveSupport::TestCase
     end
   end
 
+  test "signed cookies raise a clear error when the request has no key generator" do
+    error = assert_raises(ActionView::Template::Error) do
+      render inline: "<%= cookies.signed[:user_id] %>"
+    end
+
+    assert_kind_of ActionDispatch::Cookies::MissingKeyGenerator, error.cause
+  end
+
   private
     def renderer
       @renderer ||= ApplicationController.renderer.new

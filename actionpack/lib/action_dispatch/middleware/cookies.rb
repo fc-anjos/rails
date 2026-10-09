@@ -33,7 +33,7 @@ module ActionDispatch
     end
 
     def key_generator
-      get_header Cookies::GENERATOR_KEY
+      get_header(Cookies::GENERATOR_KEY) || raise(Cookies::MissingKeyGenerator)
     end
 
     def signed_cookie_salt
@@ -214,6 +214,16 @@ module ActionDispatch
     COOKIES_ROTATIONS = "action_dispatch.cookies_rotations"
     COOKIES_SAME_SITE_PROTECTION = "action_dispatch.cookies_same_site_protection"
     USE_COOKIES_WITH_METADATA = "action_dispatch.use_cookies_with_metadata"
+
+    # Raised when signed or encrypted cookies are used on a request whose env has no
+    # key generator, such as a request built by ActionController::Renderer.
+    class MissingKeyGenerator < StandardError
+      def initialize(message = "This request has no key generator, so signed and encrypted cookies are unavailable. " \
+                               "Requests that do not pass through the application, such as those built by " \
+                               "ActionController::Renderer, have no cookie secrets.")
+        super
+      end
+    end
 
     # Cookies can typically store 4096 bytes.
     MAX_COOKIE_SIZE = 4096

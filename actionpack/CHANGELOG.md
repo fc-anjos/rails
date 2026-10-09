@@ -1,3 +1,13 @@
+*   Raise `ActionDispatch::Cookies::MissingKeyGenerator` when signed or encrypted
+    cookies are used on a request without a key generator.
+
+    Requests built by `ActionController::Renderer` have no key generator, so
+    `cookies.signed` raised `NoMethodError` on `nil`.
+
+    Fixes #18409.
+
+    *Felipe Anjos*
+
 *   Report reads of request `Current` attributes in `ActionController::Renderer` renders.
 
     A render through `ApplicationController.render`, as Turbo Stream broadcasts
