@@ -4431,6 +4431,28 @@ module ApplicationTests
       MESSAGE
     end
 
+    test "ActiveStorage.renderer_url_options is :renderer with 8.2 defaults" do
+      app "development"
+
+      assert_equal :renderer, ActiveStorage.renderer_url_options
+    end
+
+    test "ActiveStorage.renderer_url_options is :caller with 8.1 defaults" do
+      remove_from_config '.*config\.load_defaults.*\n'
+      add_to_config 'config.load_defaults "8.1"'
+
+      app "development"
+
+      assert_equal :caller, ActiveStorage.renderer_url_options
+    end
+
+    test "ActiveStorage.renderer_url_options raises on an unknown value" do
+      add_to_config "config.active_storage.renderer_url_options = :request"
+
+      error = assert_raises(ArgumentError) { app "development" }
+      assert_match "Unknown renderer URL options source :request", error.message
+    end
+
     test "ActiveStorage.analyzers default value" do
       app "development"
 

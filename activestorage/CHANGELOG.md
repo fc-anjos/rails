@@ -1,3 +1,21 @@
+*   Generate blob URLs from the renderer's request in `ActionController::Renderer` renders when `ActiveStorage::Current.url_options` is unset.
+
+    `ApplicationController.render` called from a job raised `ArgumentError`
+    with the Disk service, because `ActiveStorage::Current.url_options` was
+    unset. Blob, variant, and preview URLs in such a render now use the host,
+    protocol, and port of the renderer's request.
+
+    Add `config.active_storage.renderer_url_options`. With `:caller`, the
+    default, `ActiveStorage::Current.url_options` already set are kept, so a
+    render made during a request, such as a Turbo Stream broadcast, generates
+    URLs with the host of the request being processed. With `:renderer`, the
+    renderer's request is always used. Applications without
+    `default_url_options` then get the renderer's default host, `example.org`,
+    and `url_options` set around a render by the application are ignored for
+    its duration. `config.load_defaults "8.2"` sets `:renderer`.
+
+    *Felipe Anjos*
+
 *   Forward other options from `has_one_attached` and `has_many_attached` to the attachment association.
 
     ```ruby

@@ -42,6 +42,7 @@ module ActiveStorage
   extend ActiveSupport::Autoload
 
   autoload :Attached
+  autoload :ControllerRenderer
   autoload :FixtureSet
   autoload :Service
   autoload :Previewer
@@ -373,6 +374,17 @@ module ActiveStorage
   mattr_accessor :track_variants, default: false
 
   mattr_accessor :s3_public_uploads_via_acl, default: true
+
+  mattr_reader :renderer_url_options, default: :caller
+
+  def self.renderer_url_options=(source)
+    unless source == :caller || source == :renderer
+      raise ArgumentError, "Unknown renderer URL options source #{source.inspect}. " \
+        "Set `config.active_storage.renderer_url_options` to :caller or :renderer."
+    end
+
+    @@renderer_url_options = source
+  end
 
   singleton_class.attr_accessor :checksum_implementation
   @checksum_implementation = OpenSSL::Digest::MD5
