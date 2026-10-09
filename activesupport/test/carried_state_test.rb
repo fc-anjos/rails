@@ -74,4 +74,12 @@ class CarriedStateTest < ActiveSupport::TestCase
     CarriedState.unregister(:a)
     assert_equal [], CarriedState.names
   end
+
+  test "local hooks are left out of what crosses a queue" do
+    CarriedState.register :here, capture: -> { 1 }, restore: ->(v, &block) { block.call }, local: true
+    CarriedState.register :anywhere, capture: -> { 2 }, restore: ->(v, &block) { block.call }
+
+    assert_equal({ here: 1, anywhere: 2 }, CarriedState.capture)
+    assert_equal({ anywhere: 2 }, CarriedState.capture(local: false))
+  end
 end

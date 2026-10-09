@@ -15,21 +15,27 @@ module ActiveSupport
   #
   # A value of +nil+ is not carried, and its restorer is not called.
   #
+  # A hook registered with <tt>local: true</tt> carries its value only into work
+  # run in the same process, such as a render, and never across a queue. It is
+  # for values that cannot be serialized, or that describe how the caller runs
+  # rather than what the work is for, such as a database role or an encryption
+  # context.
+  #
   # Values carried into a job cross its queue, so Active Job serializes them as
   # it serializes job arguments: a value must be a type an argument may be, such
   # as a string, a symbol, a hash or a record, which travels as its GlobalID.
   # Values carried into a render are passed as they are.
   module CarriedState
-    Hook = Struct.new(:name, :capture, :restore) # :nodoc:
+    Hook = Struct.new(:name, :capture, :restore, :local) # :nodoc:
 
     @hooks = {}.freeze
 
     class << self
       # Registers how +name+ is captured and restored. Registering a name again
       # replaces its hook.
-      def register(name, capture:, restore:)
+      def register(name, capture:, restore:, local: false)
         name = name.to_sym
-        @hooks = @hooks.merge(name => Hook.new(name, capture, restore).freeze).freeze
+        @hooks = @hooks.merge(name => Hook.new(name, capture, restore, local).freeze).freeze
       end
 
       # Removes the hook registered under +name+.
@@ -43,11 +49,13 @@ module ActiveSupport
       end
 
       # Returns the value of each registered hook in the current context, by
-      # name, without the ones that are +nil+.
-      def capture
+      # name, without the ones that are +nil+. With <tt>local: false</tt>, for
+      # work that crosses a queue, hooks registered as local are left out.
+      def capture(local: true)
         captured = {}
 
         @hooks.each_value do |hook|
+          next if hook.local && !local
           value = hook.capture.call
           captured[hook.name] = value unless value.nil?
         end

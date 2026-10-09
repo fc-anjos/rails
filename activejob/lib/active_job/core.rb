@@ -114,7 +114,7 @@ module ActiveJob
       @priority   = self.class.priority
       @executions = 0
       @exception_executions = {}
-      @carried_state = ActiveSupport::CarriedState.capture
+      @carried_state = ActiveSupport::CarriedState.capture(local: false)
       @locale     = @carried_state.delete(:locale)&.to_s
       @timezone   = @carried_state.delete(:timezone)
     end
