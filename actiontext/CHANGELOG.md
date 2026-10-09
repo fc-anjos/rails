@@ -1,3 +1,14 @@
+*   Render attachments through `ActionController::Renderer` during renderer renders.
+
+    `ApplicationController.render` called during a request rendered Action Text
+    attachments through the controller handling that request, so attachment
+    partials saw its host, cookies, and state, while the same render from a job
+    used a bare `ActionController::Base` without the application's helpers.
+    Attachments now render through the renderer itself in both cases, so URLs
+    they build from the request use the renderer's host.
+
+    *Felipe Anjos*
+
 *   Add alternative text to Action Text attachments.
 
     Attachments could only be described by their caption, which is always shown
