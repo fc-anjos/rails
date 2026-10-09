@@ -2309,9 +2309,10 @@ the requesting user's `Current.user` for every subscriber. A `Current.set`
 block around the render does not give it its attributes either. What the render
 writes to `Current` is discarded when it ends, also when it raises, and the
 caller's attributes are put back through their writers, as when a `Current.set`
-block ends. `Time.zone` and `I18n.locale` stay the caller's, as Active Job
-carries them into a job. The URL options Active Storage builds blob URLs from
-are carried in, as they are the same for every user.
+block ends. The render receives from its caller only what is registered with
+`ActiveSupport::CarriedState`, which is also what Active Job carries into a job:
+`I18n.locale`, `Time.zone`, the URL options Active Storage builds blob URLs
+from, and what libraries register.
 
 Pass the render the values it needs as locals:
 

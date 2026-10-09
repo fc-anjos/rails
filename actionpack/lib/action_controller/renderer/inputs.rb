@@ -14,11 +14,9 @@ module ActionController
     #   `config.action_controller.renderer_isolates_execution_state`, it runs on
     #   an ActiveSupport::IsolatedExecutionState store of its own, so
     #   `Current` attributes, `thread_mattr_accessor` values and everything else
-    #   Rails keeps per thread or fiber start empty. It then receives what a job
-    #   enqueued by the caller would receive, through Renderer.job_context, and
-    #   the `Current` attributes declared with
-    #   ActiveSupport::CurrentAttributes::Isolation.carry. Otherwise it is the
-    #   caller's.
+    #   Rails keeps per thread or fiber start empty, but for what is registered
+    #   with ActiveSupport::CarriedState, which is captured in the caller and
+    #   restored around the render. Otherwise it is the caller's.
     #
     # Reads of what a render did not receive, a session, cookies or flash
     # missing from the env, or a `Current` attribute its caller had set, are
@@ -45,11 +43,23 @@ module ActionController
       # Runs the render with the per-thread state it receives.
       def rendering(&block)
         if @controller.renderer_isolates_execution_state
-          job = Renderer.job_context&.capture
+          carried = ActiveSupport::CarriedState.capture
+          rendering = false
 
-          ActiveSupport::CurrentAttributes::Isolation.run(carry: true, on_dropped_read: @unprovided) do
+          # Reads made by the restorers, such as Current.set reading the value
+          # it puts back, are not the render's, so only the render's are reported.
+          if @unprovided
+            on_dropped_read = ->(current, name) { @unprovided.call(current, name) if rendering }
+          end
+
+          ActiveSupport::CurrentAttributes::Isolation.run(on_dropped_read: on_dropped_read) do
             ActiveSupport::IsolatedExecutionState.isolated do
-              job ? job.perform(&block) : yield
+              ActiveSupport::CarriedState.restore(carried) do
+                rendering = true
+                yield
+              ensure
+                rendering = false
+              end
             end
           end
         else

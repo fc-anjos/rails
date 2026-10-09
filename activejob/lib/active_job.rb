@@ -34,6 +34,18 @@ require "global_id"
 module ActiveJob
   extend ActiveSupport::Autoload
 
+  # A job is performed in the locale and time zone it was created in, and so is
+  # anything else that receives what ActiveSupport::CarriedState carries, such
+  # as an isolated render. They are registered as Active Job is required, before
+  # anything captures them.
+  ActiveSupport::CarriedState.register :locale,
+    capture: -> { I18n.locale },
+    restore: ->(locale, &block) { I18n.with_locale(locale, &block) }
+
+  ActiveSupport::CarriedState.register :timezone,
+    capture: -> { Time.zone&.name },
+    restore: ->(timezone, &block) { Time.use_zone(timezone, &block) }
+
   autoload :Base
   autoload :QueueAdapters
   autoload :Arguments
@@ -42,7 +54,6 @@ module ActiveJob
   autoload :SerializationError, "active_job/arguments"
   autoload :UnknownJobClassError, "active_job/core"
   autoload :EnqueueAfterTransactionCommit
-  autoload :ImmediateJob
 
   eager_autoload do
     autoload :Continuable

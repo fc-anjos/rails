@@ -1,3 +1,20 @@
+*   Add `ActiveSupport::CarriedState` to carry per-thread state into work run elsewhere.
+
+    A library registers how a value is captured where work is handed off and
+    restored where it runs. Active Job captures every registered value as a job
+    is created, serializes it with the job's arguments, and restores it as the
+    job is performed, as it does for the locale and time zone, which it
+    registers. A render through `ActionController::Renderer` isolated from its
+    caller's state receives the same values, unserialized.
+
+    ```ruby
+    ActiveSupport::CarriedState.register :tenant,
+      capture: -> { Tenant.current },
+      restore: ->(tenant, &block) { Tenant.with(tenant, &block) }
+    ```
+
+    *Felipe Cavalheiro Anjos*
+
 *   Freeze events emitted by `ActiveSupport::EventReporter`.
 
     Subscribers can no longer change the event seen by later subscribers.

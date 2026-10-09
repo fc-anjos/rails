@@ -1,12 +1,13 @@
-*   Render through `ActionController::Renderer` as a job performed right away.
+*   Render through `ActionController::Renderer` on execution state of its own.
 
     With `config.action_controller.renderer_isolates_execution_state`
     enabled, `ApplicationController.render` and Turbo Stream broadcasts run on
     an `ActiveSupport::IsolatedExecutionState` of their own, so `Current`
     attributes, `thread_mattr_accessor` values and the rest of Rails'
-    per-thread state start empty. The render then receives what a job
-    enqueued by its caller would: the locale, the time zone, and whatever
-    libraries carry into every job, such as a tenant. A broadcast made during
+    per-thread state start empty. The render then receives what is registered
+    with `ActiveSupport::CarriedState`, which is also what a job receives from
+    the code that enqueues it: the locale, the time zone, Active Storage's URL
+    options, and what libraries register, such as a tenant. A broadcast made during
     an action, or inside a `Current.set` block, no longer renders with the
     caller's `Current.user`, or with the request's controller as Action Text's
     renderer, for every subscriber. What the render writes is discarded. Pass

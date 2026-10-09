@@ -22,13 +22,7 @@ class CurrentAttributesIsolationTest < ActiveSupport::TestCase
     attribute :host, :path
   end
 
-  setup do
-    @carried = Isolation.carried
-    Isolation.carry(Location, :host)
-  end
-
   teardown do
-    Isolation.instance_variable_set(:@carried, @carried)
     Time.zone = nil
   end
 
@@ -67,43 +61,12 @@ class CurrentAttributesIsolationTest < ActiveSupport::TestCase
     assert_equal "Copenhagen", Time.zone.name
   end
 
-  test "with carry, gives the block the declared attributes as it first uses their class" do
-    Location.host = "example.com"
-    Location.path = "/messages"
-
-    Isolation.run(carry: true) do
-      assert_equal "example.com", Location.host
-      assert_nil Location.path
-      Location.host = "other.example.com"
-    end
-
-    assert_equal "example.com", Location.host
-    assert_equal "/messages", Location.path
-  end
-
-  test "without carry, gives the block nothing" do
+  test "gives the block nothing of the caller's instances" do
     Location.host = "example.com"
 
     Isolation.run do
       assert_nil Location.host
     end
-  end
-
-  test "a context isolated inside a carrying one does not carry" do
-    Location.host = "example.com"
-
-    Isolation.run(carry: true) do
-      Isolation.run do
-        assert_nil Location.host
-      end
-      assert_equal "example.com", Location.host
-    end
-  end
-
-  test "carry adds to the names a class declared" do
-    Isolation.carry(Location, :path)
-
-    assert_equal [:host, :path], Isolation.carried[Location.name.to_sym]
   end
 
   test "on_dropped_read is called for reads of attributes the caller had set and the block did not receive" do
@@ -112,12 +75,12 @@ class CurrentAttributesIsolationTest < ActiveSupport::TestCase
     Location.host = "example.com"
     reads = []
 
-    Isolation.run(carry: true, on_dropped_read: ->(current, name) { reads << [current.class, name] }) do
+    Isolation.run(on_dropped_read: ->(current, name) { reads << [current.class, name] }) do
       Current.user
       Current.user
       Current.account
       Current.count
-      Location.host
+      Location.path
     end
 
     assert_equal [[Current, :user], [Current, :user]], reads

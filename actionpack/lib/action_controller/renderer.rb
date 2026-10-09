@@ -39,14 +39,15 @@ module ActionController
   # generator, so `cookies.signed` and `cookies.encrypted` raise NoMethodError.
   #
   # With `config.action_controller.renderer_isolates_execution_state`
-  # enabled, the render runs with its own ActiveSupport::CurrentAttributes and
-  # execution context, as a job performed by a queue does, so a render made
-  # during an action, or inside a `Current.set` block, does not see the
-  # caller's `Current.user`. Whatever the render writes to `Current` is
-  # discarded when it ends, and the caller's attributes are put back through
-  # their writers, as when a `Current.set` block ends. `Time.zone` and
-  # `I18n.locale` are the caller's, as Active Job carries them into a job. The
-  # URL options Active Storage builds blob URLs from are carried in.
+  # enabled, the render runs on an ActiveSupport::IsolatedExecutionState store
+  # of its own, as a job performed by a queue does, so a render made during an
+  # action, or inside a `Current.set` block, does not see the caller's
+  # `Current.user`. Whatever the render writes to `Current` is discarded when
+  # it ends, and the caller's attributes are put back through their writers, as
+  # when a `Current.set` block ends. The render receives from its caller what
+  # is registered with ActiveSupport::CarriedState, which is also what a job
+  # receives from the code that enqueues it: the locale and time zone, the URL
+  # options Active Storage builds blob URLs from, and what libraries register.
   #
   # `config.action_controller.action_on_unprovided_renderer_input` controls what
   # happens when a render reads an input it was not given: a session, cookies or
@@ -78,14 +79,6 @@ module ActionController
     autoload :WithheldFlash,       "action_controller/renderer/withheld_flash"
 
     attr_reader :controller
-
-    # Gives an isolated render what a job performed for it would receive from
-    # its caller. Responds to `capture`, called in the caller's state, which
-    # returns an object whose `perform` runs the render with what it captured.
-    # Active Job sets it to ActiveJob::ImmediateJob, so a render receives the
-    # locale, time zone and whatever libraries carry into every job. Without
-    # it, an isolated render receives nothing.
-    singleton_class.attr_accessor :job_context # :nodoc:
 
     DEFAULTS = {
       method: "get",

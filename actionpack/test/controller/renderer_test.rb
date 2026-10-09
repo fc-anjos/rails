@@ -680,13 +680,14 @@ class RendererIsolationTest < ActionController::TestCase
     RendererIsolationController.renders = []
     @logger = ActiveSupport::LogSubscriber::TestHelper::MockLogger.new
     @original_logger, RendererIsolationController.logger = RendererIsolationController.logger, @logger
-    @carried = ActiveSupport::CurrentAttributes::Isolation.carried
-    ActiveSupport::CurrentAttributes::Isolation.carry(RendererIsolationCurrent, :host)
+    ActiveSupport::CarriedState.register :renderer_test_host,
+      capture: -> { RendererIsolationCurrent.host },
+      restore: ->(host, &block) { RendererIsolationCurrent.set(host: host, &block) }
   end
 
   teardown do
     RendererIsolationController.logger = @original_logger
-    ActiveSupport::CurrentAttributes::Isolation.instance_variable_set(:@carried, @carried)
+    ActiveSupport::CarriedState.unregister(:renderer_test_host)
     RendererIsolationCurrent.reset
     Time.zone = nil
   end
@@ -784,32 +785,29 @@ class RendererIsolationTest < ActionController::TestCase
     assert_equal ["&quot;acme&quot;"], renders
   end
 
-  test "with isolation, the attributes declared with Isolation.carry are carried, and not reported" do
+  test "with isolation, what is registered with CarriedState is carried, and not reported" do
     render_in_action :broadcast_carried, input: :raise
 
     assert_equal ["&quot;example.com&quot;"], renders
   end
 
-  test "with isolation and no job context, a render does not receive the caller's Time.zone, and its writer's side effects are undone" do
+  test "with isolation and no time zone registered with CarriedState, a render does not receive the caller's Time.zone, and its writer's side effects are undone" do
     render_in_action :broadcast_writing_zone, input: false
 
     assert_equal ["nil de Tokyo"], renders
     assert_equal "Copenhagen", @response.body
   end
 
-  ZoneJobContext = Struct.new(:zone) do
-    def self.capture = new(Time.zone)
-    def perform(&block) = Time.use_zone(zone, &block)
-  end
-
-  test "with isolation, a render receives what the job context captures from its caller" do
-    ActionController::Renderer.job_context, original = ZoneJobContext, ActionController::Renderer.job_context
+  test "with isolation, a render receives what CarriedState captures from its caller" do
+    ActiveSupport::CarriedState.register :renderer_test_zone,
+      capture: -> { Time.zone },
+      restore: ->(zone, &block) { Time.use_zone(zone, &block) }
     render_in_action :broadcast_writing_zone, input: false
 
     assert_equal ["&quot;Copenhagen&quot; de Tokyo"], renders
     assert_equal "Copenhagen", @response.body
   ensure
-    ActionController::Renderer.job_context = original
+    ActiveSupport::CarriedState.unregister(:renderer_test_zone)
   end
 
   test "with isolation, a render's writes are discarded when it raises" do

@@ -319,19 +319,6 @@ module ActiveSupport
     end
 
     private
-      # Copies the values, not through the writers: the caller's writers
-      # already ran for them.
-      def receive_attribute_values(source, names)
-        source_attributes = source.__send__(:stored_attributes)
-        names.each do |name|
-          @attributes[name] = source_attributes[name] if source_attributes.key?(name)
-        end
-      end
-
-      def stored_attributes
-        @attributes
-      end
-
       def watch_dropped_reads(names, on_dropped_read)
         @attributes = Isolation::DroppedAttributes.new(self, @attributes, names, on_dropped_read)
       end

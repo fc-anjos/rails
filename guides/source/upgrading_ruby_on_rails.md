@@ -202,9 +202,9 @@ Its output is not the response to the request, and a broadcast sends the same
 HTML to every subscriber, so it no longer renders with the requesting user's
 `Current.user`. This applies to a `Current.set` block around the render too.
 Everything else Rails keeps per thread or fiber starts empty as well. The render
-receives what a job enqueued by its caller receives as it is performed: the
-locale, the time zone, and what libraries carry into every job, such as a
-tenant. It also receives the URL options Active Storage builds blob URLs from.
+receives what is registered with `ActiveSupport::CarriedState`, which is also
+what a job receives from the code that enqueues it: the locale, the time zone,
+Active Storage's URL options, and what libraries register, such as a tenant.
 What the render writes is discarded when it ends.
 
 With `action_on_unprovided_renderer_input = :raise`, also in the 8.2 defaults,

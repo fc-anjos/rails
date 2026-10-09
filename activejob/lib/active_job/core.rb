@@ -49,6 +49,11 @@ module ActiveJob
     # Timezone to be used during the job.
     attr_accessor :timezone
 
+    # Values registered with ActiveSupport::CarriedState, other than the locale
+    # and time zone, captured as the job is created and restored as it is
+    # performed.
+    attr_accessor :carried_state
+
     # Track when a job was enqueued
     attr_accessor :enqueued_at
 
@@ -109,7 +114,9 @@ module ActiveJob
       @priority   = self.class.priority
       @executions = 0
       @exception_executions = {}
-      @timezone   = Time.zone&.name
+      @carried_state = ActiveSupport::CarriedState.capture
+      @locale     = @carried_state.delete(:locale)&.to_s
+      @timezone   = @carried_state.delete(:timezone)
     end
 
     # Returns a hash with the job data that can safely be passed to the
@@ -128,7 +135,9 @@ module ActiveJob
         "timezone"   => timezone,
         "enqueued_at" => Time.now.utc.iso8601(9),
         "scheduled_at" => scheduled_at ? scheduled_at.utc.iso8601(9) : nil,
-      }
+      }.tap do |job_data|
+        job_data["carried_state"] = Arguments.serialize([carried_state]).first unless carried_state.empty?
+      end
     end
 
     # Attaches the stored job data to the current instance. Receives a hash
@@ -169,6 +178,7 @@ module ActiveJob
       self.timezone             = job_data["timezone"] || Time.zone&.name
       self.enqueued_at          = deserialize_time(job_data["enqueued_at"]) if job_data["enqueued_at"]
       self.scheduled_at         = deserialize_time(job_data["scheduled_at"]) if job_data["scheduled_at"]
+      self.carried_state        = job_data["carried_state"] ? Arguments.deserialize([job_data["carried_state"]]).first.symbolize_keys : {}
     end
 
     # Configures the job with the given options.
