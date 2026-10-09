@@ -1,3 +1,13 @@
+*   Raise `ActionDispatch::Cookies::MissingKeyGenerator` when signed or encrypted
+    cookies are used on a request without a key generator.
+
+    Requests built by `ActionController::Renderer` have no key generator, so
+    `cookies.signed` raised `NoMethodError` on `nil`.
+
+    Fixes #18409.
+
+    *Felipe Anjos*
+
 *   Remove support for dynamic `:controller` and `:action` route segments.
 
     A route may no longer read the controller or the action out of the URL:
