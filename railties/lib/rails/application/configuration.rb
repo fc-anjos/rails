@@ -397,6 +397,7 @@ module Rails
           if respond_to?(:active_storage)
             active_storage.analyze = :immediately
             active_storage.s3_public_uploads_via_acl = false
+            active_storage.renderer_url_options = :renderer
           end
 
           if respond_to?(:active_job)

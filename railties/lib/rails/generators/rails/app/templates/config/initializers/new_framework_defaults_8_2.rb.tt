@@ -114,6 +114,18 @@
 #++
 # Rails.application.config.active_storage.s3_public_uploads_via_acl = false
 
+###
+# Generate blob, variant, and preview URLs in renders through `ApplicationController.render`
+# from the renderer's request, even when `ActiveStorage::Current.url_options` is set.
+#
+# Such a render made during a request, for example a Turbo Stream broadcast, otherwise
+# generates URLs with the host of the request being processed. Applications that set
+# `ActiveStorage::Current.url_options` around a render to choose the host should
+# configure `ApplicationController.renderer.defaults` or the routes'
+# `default_url_options` instead.
+#++
+# Rails.application.config.active_storage.renderer_url_options = :renderer
+
 # Controls whether the `rescue_from_handled.action_controller` notification payload includes the full backtrace.
 #
 # When set to `:array`, the full backtrace is included as an array of strings.
