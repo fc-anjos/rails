@@ -111,6 +111,10 @@ module ActionText
           end
         end
       end
+
+      ActiveSupport.on_load(:action_controller) do
+        ActionController::Renderer.prepend ActionText::ControllerRenderer
+      end
     end
 
     initializer "action_text.system_test_helper" do

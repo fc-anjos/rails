@@ -19,6 +19,7 @@ module ActionText
   autoload :Attribute
   autoload :BottomUpReducer
   autoload :Content
+  autoload :ControllerRenderer
   autoload :Editor
   autoload :Encryption
   autoload :Fragment
