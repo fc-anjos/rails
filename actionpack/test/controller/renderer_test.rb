@@ -657,7 +657,7 @@ class RendererIsolationController < ActionController::Base
   def broadcast_writing_zone
     RendererIsolationCurrent.zone = "Copenhagen"
     I18n.with_locale(:de) do
-      renders << self.class.render(inline: "<%= Time.zone.name %> <%= I18n.locale %> <% RendererIsolationCurrent.zone = 'Tokyo' %><%= Time.zone.name %>")
+      renders << self.class.render(inline: "<%= Time.zone&.name.inspect %> <%= I18n.locale %> <% RendererIsolationCurrent.zone = 'Tokyo' %><%= Time.zone.name %>")
     end
     render plain: Time.zone.name
   end
@@ -691,8 +691,8 @@ class RendererIsolationTest < ActionController::TestCase
     Time.zone = nil
   end
 
-  test "renderer_isolates_current_attributes is false by default" do
-    assert_equal false, ActionController::Base.renderer_isolates_current_attributes
+  test "renderer_isolates_execution_state is false by default" do
+    assert_equal false, ActionController::Base.renderer_isolates_execution_state
   end
 
   test "without isolation, a render during an action reads the request's Current attributes, unreported" do
@@ -790,11 +790,26 @@ class RendererIsolationTest < ActionController::TestCase
     assert_equal ["&quot;example.com&quot;"], renders
   end
 
-  test "with isolation, a render keeps the caller's Time.zone and I18n.locale, and its writer's side effects are undone" do
+  test "with isolation and no job context, a render does not receive the caller's Time.zone, and its writer's side effects are undone" do
     render_in_action :broadcast_writing_zone, input: false
 
-    assert_equal ["Copenhagen de Tokyo"], renders
+    assert_equal ["nil de Tokyo"], renders
     assert_equal "Copenhagen", @response.body
+  end
+
+  ZoneJobContext = Struct.new(:zone) do
+    def self.capture = new(Time.zone)
+    def perform(&block) = Time.use_zone(zone, &block)
+  end
+
+  test "with isolation, a render receives what the job context captures from its caller" do
+    ActionController::Renderer.job_context, original = ZoneJobContext, ActionController::Renderer.job_context
+    render_in_action :broadcast_writing_zone, input: false
+
+    assert_equal ["&quot;Copenhagen&quot; de Tokyo"], renders
+    assert_equal "Copenhagen", @response.body
+  ensure
+    ActionController::Renderer.job_context = original
   end
 
   test "with isolation, a render's writes are discarded when it raises" do
@@ -834,11 +849,11 @@ class RendererIsolationTest < ActionController::TestCase
     end
 
     def with_renderer_settings(input:, isolates:)
-      original = [ActionController::Base.action_on_unprovided_renderer_input, ActionController::Base.renderer_isolates_current_attributes]
+      original = [ActionController::Base.action_on_unprovided_renderer_input, ActionController::Base.renderer_isolates_execution_state]
       ActionController::Base.action_on_unprovided_renderer_input = input
-      ActionController::Base.renderer_isolates_current_attributes = isolates
+      ActionController::Base.renderer_isolates_execution_state = isolates
       yield
     ensure
-      ActionController::Base.action_on_unprovided_renderer_input, ActionController::Base.renderer_isolates_current_attributes = original
+      ActionController::Base.action_on_unprovided_renderer_input, ActionController::Base.renderer_isolates_execution_state = original
     end
 end

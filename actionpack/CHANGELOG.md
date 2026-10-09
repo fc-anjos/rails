@@ -1,12 +1,16 @@
-*   Render through `ActionController::Renderer` with `Current` attributes of its own.
+*   Render through `ActionController::Renderer` as a job performed right away.
 
-    With `config.action_controller.renderer_isolates_current_attributes`
-    enabled, `ApplicationController.render` and Turbo Stream broadcasts start
-    with empty `ActiveSupport::CurrentAttributes`, as a job performed by a queue
-    does, so a broadcast made during an action, or inside a `Current.set`
-    block, no longer renders with the caller's `Current.user` for every
-    subscriber. What the render writes is discarded, and the caller's
-    attributes are put back. Pass the render what it needs as locals:
+    With `config.action_controller.renderer_isolates_execution_state`
+    enabled, `ApplicationController.render` and Turbo Stream broadcasts run on
+    an `ActiveSupport::IsolatedExecutionState` of their own, so `Current`
+    attributes, `thread_mattr_accessor` values and the rest of Rails'
+    per-thread state start empty. The render then receives what a job
+    enqueued by its caller would: the locale, the time zone, and whatever
+    libraries carry into every job, such as a tenant. A broadcast made during
+    an action, or inside a `Current.set` block, no longer renders with the
+    caller's `Current.user`, or with the request's controller as Action Text's
+    renderer, for every subscriber. What the render writes is discarded. Pass
+    the render what it needs as locals:
 
     ```ruby
     message.broadcast_replace_to message.room, locals: { message: message, viewer: nil }

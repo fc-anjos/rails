@@ -1658,8 +1658,8 @@ module ApplicationTests
       app "development"
 
       assert_equal :log, ActionController::Base.action_on_unprovided_renderer_input
-      assert_equal false, ActionController::Base.renderer_isolates_current_attributes
-      assert_equal false, ActionController::API.renderer_isolates_current_attributes
+      assert_equal false, ActionController::Base.renderer_isolates_execution_state
+      assert_equal false, ActionController::API.renderer_isolates_execution_state
     end
 
     test "renderer settings raise and isolate with 8.2 defaults" do
@@ -1669,20 +1669,20 @@ module ApplicationTests
       app "development"
 
       assert_equal :raise, ActionController::Base.action_on_unprovided_renderer_input
-      assert_equal true, ActionController::Base.renderer_isolates_current_attributes
-      assert_equal true, ActionController::API.renderer_isolates_current_attributes
+      assert_equal true, ActionController::Base.renderer_isolates_execution_state
+      assert_equal true, ActionController::API.renderer_isolates_execution_state
     end
 
-    test "renderer_isolates_current_attributes can be set via new framework defaults" do
+    test "renderer_isolates_execution_state can be set via new framework defaults" do
       remove_from_config '.*config\.load_defaults.*\n'
       add_to_config 'config.load_defaults "8.1"'
       app_file "config/initializers/new_framework_defaults_8_2.rb", <<-RUBY
-        Rails.application.config.action_controller.renderer_isolates_current_attributes = true
+        Rails.application.config.action_controller.renderer_isolates_execution_state = true
       RUBY
 
       app "development"
 
-      assert_equal true, ActionController::Base.renderer_isolates_current_attributes
+      assert_equal true, ActionController::Base.renderer_isolates_execution_state
     end
 
     test "config.action_dispatch.show_exceptions is sent in env" do

@@ -64,7 +64,7 @@ Below are the default values associated with each target version. In cases of co
 - [`config.action_controller.action_on_unprovided_renderer_input`](#config-action-controller-action-on-unprovided-renderer-input): `:raise`
 - [`config.action_controller.default_protect_from_forgery_with`](#config-action-controller-default-protect-from-forgery-with): `:exception`
 - [`config.action_controller.forgery_protection_verification_strategy`](#config-action-controller-forgery-protection-verification-strategy): `:header_only`
-- [`config.action_controller.renderer_isolates_current_attributes`](#config-action-controller-renderer-isolates-current-attributes): `true`
+- [`config.action_controller.renderer_isolates_execution_state`](#config-action-controller-renderer-isolates-execution-state): `true`
 - [`config.action_controller.rescue_from_event_backtrace`](#config-action-controller-rescue-from-event-backtrace): `:array`
 - [`config.action_dispatch.default_headers`](#config-action-dispatch-default-headers): `{ "X-Frame-Options" => "SAMEORIGIN", "X-Content-Type-Options" => "nosniff", "X-Permitted-Cross-Domain-Policies" => "none", "Referrer-Policy" => "strict-origin-when-cross-origin" }`
 - [`config.action_dispatch.strict_accept_header`](#config-action-dispatch-strict-accept-header): `true`
@@ -2276,7 +2276,7 @@ the renderer's env, and otherwise reads `nil` from them, including through
 helper methods such as a `current_user` that reads `session[:user_id]`. Its
 request has no key generator, so `cookies.signed` and `cookies.encrypted` raise
 `NoMethodError`; such a read is reported as the jar opens, before it raises.
-With [`config.action_controller.renderer_isolates_current_attributes`](#config-action-controller-renderer-isolates-current-attributes)
+With [`config.action_controller.renderer_isolates_execution_state`](#config-action-controller-renderer-isolates-execution-state)
 enabled, a read of a `Current` attribute that the render's caller had set to a
 value other than its default, and that the render has not written, is reported
 too. Each report says to pass the values the render needs as locals.
@@ -2297,7 +2297,7 @@ The default value depends on the `config.load_defaults` target version:
 | (original)            | `:log`               |
 | 8.2                   | `:raise`             |
 
-#### `config.action_controller.renderer_isolates_current_attributes`
+#### `config.action_controller.renderer_isolates_execution_state`
 
 Determines whether a render through `ActionController::Renderer`, such as
 `ApplicationController.render` or a Turbo Stream broadcast, runs with

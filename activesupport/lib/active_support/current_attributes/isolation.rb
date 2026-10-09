@@ -17,6 +17,10 @@ module ActiveSupport
 
       @carried = {}.freeze
 
+      # The isolation and the restoration of the block it runs stay reachable
+      # when the block also runs on a store of its own.
+      IsolatedExecutionState.carry(STATE_KEY, :active_support_current_attributes_restoration)
+
       class << self
         # Attribute names carried into isolated blocks, by instances key.
         attr_reader :carried

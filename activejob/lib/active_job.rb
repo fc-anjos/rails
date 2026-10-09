@@ -42,6 +42,7 @@ module ActiveJob
   autoload :SerializationError, "active_job/arguments"
   autoload :UnknownJobClassError, "active_job/core"
   autoload :EnqueueAfterTransactionCommit
+  autoload :ImmediateJob
 
   eager_autoload do
     autoload :Continuable

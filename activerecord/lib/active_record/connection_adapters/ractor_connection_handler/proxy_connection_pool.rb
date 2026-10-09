@@ -12,6 +12,10 @@ module ActiveRecord
 
         Lease = Struct.new(:connection, :sticky)
 
+        # Leases live in the execution state, so isolated code, such as a render
+        # inside a transaction, keeps using the connection its caller leased.
+        ActiveSupport::IsolatedExecutionState.carry(:active_record_ractor_connection_leases, :active_record_ractor_query_caches)
+
         attr_reader :db_config, :role, :shard, :key
 
         def self.for_spec(spec)

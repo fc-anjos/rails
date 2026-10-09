@@ -77,7 +77,7 @@
 # `nil` from a session, cookies or flash that were not passed in its env, so a
 # partial calling `current_user` or `authenticated?` renders its signed-out
 # markup, and `cookies.signed` raises `NoMethodError`. With
-# `renderer_isolates_current_attributes` enabled, reading a `Current` attribute
+# `renderer_isolates_execution_state` enabled, reading a `Current` attribute
 # the caller had set is reported too. Pass such a render what it needs as
 # locals.
 #
@@ -99,7 +99,7 @@
 # block, and the caller's are put back when it ends. `Time.zone` and
 # `I18n.locale` stay the caller's. Pass the render what it needs as locals.
 #++
-# Rails.application.config.action_controller.renderer_isolates_current_attributes = true
+# Rails.application.config.action_controller.renderer_isolates_execution_state = true
 
 ###
 # Remove the default X-XSS-Protection headers since all browsers have removed support for it years ago.

@@ -24,7 +24,7 @@ class ActiveStorage::CurrentTest < ActiveSupport::TestCase
   test "a render through ActionController::Renderer isolated from the caller's attributes builds blob URLs" do
     blob = create_blob(filename: "funky.jpg")
 
-    url = ActionController::Base.with(renderer_isolates_current_attributes: true, action_on_unprovided_renderer_input: :raise) do
+    url = ActionController::Base.with(renderer_isolates_execution_state: true, action_on_unprovided_renderer_input: :raise) do
       ActionController::Base.render(inline: "<%= blob.url %>", locals: { blob: blob })
     end
 

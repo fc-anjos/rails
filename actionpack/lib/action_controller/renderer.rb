@@ -38,7 +38,7 @@ module ActionController
   # through a helper method such as `current_user`. Its request has no key
   # generator, so `cookies.signed` and `cookies.encrypted` raise NoMethodError.
   #
-  # With `config.action_controller.renderer_isolates_current_attributes`
+  # With `config.action_controller.renderer_isolates_execution_state`
   # enabled, the render runs with its own ActiveSupport::CurrentAttributes and
   # execution context, as a job performed by a queue does, so a render made
   # during an action, or inside a `Current.set` block, does not see the
@@ -78,6 +78,14 @@ module ActionController
     autoload :WithheldFlash,       "action_controller/renderer/withheld_flash"
 
     attr_reader :controller
+
+    # Gives an isolated render what a job performed for it would receive from
+    # its caller. Responds to `capture`, called in the caller's state, which
+    # returns an object whose `perform` runs the render with what it captured.
+    # Active Job sets it to ActiveJob::ImmediateJob, so a render receives the
+    # locale, time zone and whatever libraries carry into every job. Without
+    # it, an isolated render receives nothing.
+    singleton_class.attr_accessor :job_context # :nodoc:
 
     DEFAULTS = {
       method: "get",

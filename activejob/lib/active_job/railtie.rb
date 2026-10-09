@@ -49,6 +49,12 @@ module ActiveJob
       end
     end
 
+    initializer "active_job.renderer_job_context" do
+      ActiveSupport.on_load(:action_controller) do
+        ActionController::Renderer.job_context = ActiveJob::ImmediateJob
+      end
+    end
+
     initializer "active_job.set_configs" do |app|
       options = app.config.active_job
       options.queue_adapter ||= (Rails.env.test? ? :test : :async)

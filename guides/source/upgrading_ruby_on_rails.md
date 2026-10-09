@@ -201,9 +201,11 @@ its own `ActiveSupport::CurrentAttributes`, as a job performed by a queue does.
 Its output is not the response to the request, and a broadcast sends the same
 HTML to every subscriber, so it no longer renders with the requesting user's
 `Current.user`. This applies to a `Current.set` block around the render too.
-What the render writes to `Current` is discarded when it ends. `Time.zone`,
-`I18n.locale` and the URL options Active Storage builds blob URLs from stay the
-caller's.
+Everything else Rails keeps per thread or fiber starts empty as well. The render
+receives what a job enqueued by its caller receives as it is performed: the
+locale, the time zone, and what libraries carry into every job, such as a
+tenant. It also receives the URL options Active Storage builds blob URLs from.
+What the render writes is discarded when it ends.
 
 With `action_on_unprovided_renderer_input = :raise`, also in the 8.2 defaults,
 a render that reads a `Current` attribute its caller had set raises
@@ -257,12 +259,12 @@ the render reads state it does not have; pass `viewer: nil` to make that
 explicit.
 
 To find these renders before switching, enable
-`renderer_isolates_current_attributes` with
+`renderer_isolates_execution_state` with
 `action_on_unprovided_renderer_input = :log`, and read the warnings. To keep
 the previous behavior, set:
 
 ```ruby
-Rails.application.config.action_controller.renderer_isolates_current_attributes = false
+Rails.application.config.action_controller.renderer_isolates_execution_state = false
 Rails.application.config.action_controller.action_on_unprovided_renderer_input = :log
 ```
 

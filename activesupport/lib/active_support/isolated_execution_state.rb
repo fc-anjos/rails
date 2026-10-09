@@ -4,12 +4,16 @@
 module ActiveSupport
   module IsolatedExecutionState # :nodoc:
     @isolation_level = nil
+    @carried_keys = [].freeze
 
     Thread.attr_accessor :active_support_execution_state
     Fiber.attr_accessor :active_support_execution_state
 
     class << self
       attr_reader :isolation_level, :scope
+
+      # Keys that #isolated copies into the store it runs its block on.
+      attr_reader :carried_keys
 
       def isolation_level=(level)
         return if level == @isolation_level
@@ -54,6 +58,38 @@ module ActiveSupport
 
       def context
         scope.current
+      end
+
+      # Declares keys whose values #isolated copies from the caller's store.
+      # They are framework plumbing that isolated code cannot run correctly
+      # without, such as the executor run it is part of, never values that
+      # describe who the code runs for: those reach isolated code only as a job
+      # receives them, or as arguments.
+      def carry(*keys)
+        @carried_keys = (@carried_keys | keys).freeze
+      end
+
+      # Runs the block on a store of its own that holds nothing but the carried
+      # keys of the caller's, and puts the caller's store back as it ends. What
+      # the block writes stays in its store. Values are shared, not copied, so a
+      # carried stack that the block pushes to must be popped by the block.
+      def isolated
+        state = context.active_support_execution_state
+        isolated_state = {}
+
+        if state
+          @carried_keys.each do |key|
+            isolated_state[key] = state[key] if state.key?(key)
+          end
+        end
+
+        context.active_support_execution_state = isolated_state
+
+        begin
+          yield
+        ensure
+          context.active_support_execution_state = state
+        end
       end
 
       def share_with(other, except: [], &block)

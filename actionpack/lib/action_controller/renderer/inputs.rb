@@ -10,10 +10,14 @@ module ActionController
     # * Its locals and assigns, from the render arguments, as given.
     # * Its request, built from the renderer env: a host, HTTPS, a script name,
     #   and a session, cookies or flash only when the env holds them.
-    # * Its `Current` attributes. With
-    #   `config.action_controller.renderer_isolates_current_attributes`, they
-    #   start empty, but for the attributes a framework or library declared with
-    #   ActiveSupport::CurrentAttributes::Isolation.carry. Otherwise they are the
+    # * Its per-thread state. With
+    #   `config.action_controller.renderer_isolates_execution_state`, it runs on
+    #   an ActiveSupport::IsolatedExecutionState store of its own, so
+    #   `Current` attributes, `thread_mattr_accessor` values and everything else
+    #   Rails keeps per thread or fiber start empty. It then receives what a job
+    #   enqueued by the caller would receive, through Renderer.job_context, and
+    #   the `Current` attributes declared with
+    #   ActiveSupport::CurrentAttributes::Isolation.carry. Otherwise it is the
     #   caller's.
     #
     # Reads of what a render did not receive, a session, cookies or flash
@@ -38,10 +42,16 @@ module ActionController
         end
       end
 
-      # Runs the render with the `Current` attributes it receives.
+      # Runs the render with the per-thread state it receives.
       def rendering(&block)
-        if @controller.renderer_isolates_current_attributes
-          ActiveSupport::CurrentAttributes::Isolation.run(carry: true, on_dropped_read: @unprovided, &block)
+        if @controller.renderer_isolates_execution_state
+          job = Renderer.job_context&.capture
+
+          ActiveSupport::CurrentAttributes::Isolation.run(carry: true, on_dropped_read: @unprovided) do
+            ActiveSupport::IsolatedExecutionState.isolated do
+              job ? job.perform(&block) : yield
+            end
+          end
         else
           yield
         end

@@ -80,7 +80,7 @@ class ActionCable::Channel::RendererIsolationTest < ActionCable::TestCase
       connection = Connection.new(@server, ActionCable::Server::Socket.new(@server, @env))
       identifier = { channel: ChatChannel.name }.to_json
 
-      ActionController::Base.with(renderer_isolates_current_attributes: isolates, action_on_unprovided_renderer_input: input) do
+      ActionController::Base.with(renderer_isolates_execution_state: isolates, action_on_unprovided_renderer_input: input) do
         connection.handle_channel_command("command" => "subscribe", "identifier" => identifier)
         connection.handle_channel_command("command" => "message", "identifier" => identifier, "data" => { action: action }.to_json)
       end
