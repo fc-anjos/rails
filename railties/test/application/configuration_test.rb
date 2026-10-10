@@ -1651,6 +1651,13 @@ module ApplicationTests
       assert_equal :log, ActionController::Base.action_on_open_redirect
     end
 
+    test "ActionController::Base.action_on_current_attribute_read_in_renderer is :log by default" do
+      app "test"
+
+      assert_equal :log, ActionController::Base.action_on_current_attribute_read_in_renderer
+      assert_equal :log, ActionController::API.action_on_current_attribute_read_in_renderer
+    end
+
     test "config.action_dispatch.show_exceptions is sent in env" do
       make_basic_app do |application|
         application.config.action_dispatch.show_exceptions = :all

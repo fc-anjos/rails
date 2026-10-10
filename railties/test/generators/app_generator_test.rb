@@ -371,6 +371,15 @@ class AppGeneratorTest < Rails::Generators::TestCase
     assert_no_file "config/storage.yml"
   end
 
+  def test_generated_test_environment_raises_on_current_attribute_reads_in_renderer
+    run_generator
+
+    assert_file "config/environments/test.rb", /config\.action_controller\.action_on_current_attribute_read_in_renderer = :raise/
+    assert_file "config/environments/development.rb" do |content|
+      assert_no_match(/action_on_current_attribute_read_in_renderer/, content)
+    end
+  end
+
   def test_app_update_does_not_generate_active_storage_contents_when_skip_active_record_is_given
     run_generator [destination_root, "--skip-active-record"]
     run_app_update

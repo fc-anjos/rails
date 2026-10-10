@@ -50,7 +50,16 @@ module ActionController
         def open_redirector
           redirect_to "example.com"
         end
+
+        def current_attribute_reader_in_renderer
+          StructuredEventCurrent.user = "david"
+          render plain: ApplicationController.render(inline: "<%= StructuredEventCurrent.user %>")
+        end
       end
+    end
+
+    class ::StructuredEventCurrent < ActiveSupport::CurrentAttributes
+      attribute :user
     end
 
     tests Another::StructuredEventSubscribersController
@@ -210,6 +219,24 @@ module ActionController
 
         assert(event[:payload][:stacktrace].find { |line| line.include?("structured_event_subscriber_test.rb:51") })
       end
+    end
+
+    def test_current_attribute_read_in_renderer
+      ActionController::Base.with(action_on_current_attribute_read_in_renderer: :notify) do
+        event = assert_event_reported("action_controller.current_attribute_read_in_renderer", payload: {
+          attribute: "StructuredEventCurrent.user",
+          template: "the render",
+          controller: Another::StructuredEventSubscribersController.name,
+          action: "current_attribute_reader_in_renderer",
+        }) do
+          get :current_attribute_reader_in_renderer
+        end
+
+        assert_match "`StructuredEventCurrent.user` was read by `the render`", event[:payload][:message]
+        assert(event[:payload][:stacktrace].find { |line| line.include?("inline template") })
+      end
+    ensure
+      StructuredEventCurrent.reset
     end
   end
 end

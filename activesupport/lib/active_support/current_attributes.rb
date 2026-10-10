@@ -100,6 +100,39 @@ module ActiveSupport
 
     NOT_SET = Object.new.freeze # :nodoc:
 
+    # Holds the attributes of an instance while CurrentAttributes.observing_reads
+    # runs, and reports the reads that return the value an observed attribute
+    # held when the block started.
+    class ObservedAttributes < Hash # :nodoc:
+      def initialize(current, attributes, observed_values, on_read)
+        super()
+        replace(attributes)
+        @current = current
+        @observed_values = observed_values
+        @on_read = on_read
+      end
+
+      def [](name)
+        value = super
+        observe(name, value)
+        value
+      end
+
+      # Called by CurrentAttributes#attributes, which reads every attribute.
+      def dup
+        each { |name, value| observe(name, value) }
+        to_h
+      end
+
+      private
+        # A value the observed code wrote, directly or with a #set block, is its own.
+        def observe(name, value)
+          if @observed_values.key?(name) && @observed_values[name].equal?(value)
+            @on_read.call(@current, name)
+          end
+        end
+    end
+
     class << self
       # Returns singleton instance for this class in this thread. If none exists, one is created.
       def instance
@@ -163,6 +196,35 @@ module ActiveSupport
         end
       end
 
+      # Runs the block, calling +on_read+ with the instance and the attribute name
+      # whenever the block reads an attribute that is set, on an instance that
+      # exists when the block starts, and the read returns the value the attribute
+      # held then. An attribute is set when its value differs from the attribute's
+      # default, which is resolved again to compare. A value the block writes,
+      # directly or with a #set block, is not reported, and is kept after the block.
+      def observing_reads(on_read) # :nodoc:
+        observed = {}.compare_by_identity
+
+        current_instances.values.each do |instance|
+          if original_attributes = instance.__send__(:observe_reads, on_read)
+            observed[instance] = original_attributes
+          end
+        end
+
+        yield
+      ensure
+        observed&.each do |instance, original_attributes|
+          instance.__send__(:stop_observing_reads, original_attributes)
+        end
+      end
+
+      # Returns the number of #set blocks opened so far on this thread or fiber.
+      # Passed to #provided_attribute? as +opened_after+, it leaves out the blocks
+      # opened before this call.
+      def opened_set_blocks # :nodoc:
+        IsolatedExecutionState[:active_support_current_attributes_opened_set_blocks] || 0
+      end
+
       private
         def generated_attribute_methods
           @generated_attribute_methods ||= Module.new.tap { |mod| include mod }
@@ -206,6 +268,7 @@ module ActiveSupport
 
     def initialize
       @attributes = resolve_defaults
+      @provided_attributes = nil
     end
 
     def attributes
@@ -224,8 +287,37 @@ module ActiveSupport
     #   end
     # end
     # ```
+    #
+    # The attributes a `set` block names are provided to the code that runs in it.
+    # A render through ActionController::Renderer made while a controller processes
+    # an action reports reading an attribute set for the request, unless a `set`
+    # block opened during the action provides it (see
+    # `config.action_controller.action_on_current_attribute_read_in_renderer`):
+    #
+    # ```
+    # Current.set(user: nil) do
+    #   ApplicationController.render partial: "messages/message", locals: { message: message }
+    # end
+    # ```
     def set(attributes, &block)
-      with(**attributes, &block)
+      (@provided_attributes ||= []) << [open_set_block, attributes]
+
+      begin
+        with(**attributes, &block)
+      ensure
+        @provided_attributes.pop
+      end
+    end
+
+    # Returns whether an open #set block names the attribute. With +opened_after+,
+    # a number returned by CurrentAttributes.opened_set_blocks, only the blocks
+    # opened since that call count.
+    def provided_attribute?(name, opened_after: 0) # :nodoc:
+      @provided_attributes&.reverse_each do |opened, attributes|
+        return false if opened <= opened_after
+        return true if attributes.key?(name) || attributes.key?(name.name)
+      end
+      false
     end
 
     # Reset all attributes. Should be called before and after actions, when used as a per-request singleton.
@@ -236,10 +328,48 @@ module ActiveSupport
     end
 
     private
+      def observe_reads(on_read)
+        return if ObservedAttributes === @attributes
+
+        observed_values = attribute_values_changed_from_defaults
+        return if observed_values.empty?
+
+        original_attributes = @attributes
+        @attributes = ObservedAttributes.new(self, original_attributes, observed_values, on_read)
+        original_attributes
+      end
+
+      def stop_observing_reads(original_attributes)
+        @attributes = original_attributes.replace(@attributes)
+      end
+
+      # A default given as a Proc is compared with the value it resolved to, by
+      # identity, because calling it again may return a different value or have
+      # side effects.
+      def attribute_values_changed_from_defaults
+        @attributes.select do |name, value|
+          default = defaults.fetch(name, NOT_SET)
+
+          if Proc === default
+            !value.equal?(@resolved_proc_defaults[name])
+          else
+            value != (default unless default == NOT_SET)
+          end
+        end
+      end
+
+      # Numbers the #set blocks of the thread or fiber in the order they open.
+      def open_set_block
+        IsolatedExecutionState[:active_support_current_attributes_opened_set_blocks] =
+          (IsolatedExecutionState[:active_support_current_attributes_opened_set_blocks] || 0) + 1
+      end
+
       def resolve_defaults
+        @resolved_proc_defaults = {}
+
         defaults.each_with_object({}) do |(key, value), result|
           if value != NOT_SET
-            result[key] = Proc === value ? value.call : value.dup
+            result[key] = Proc === value ? (@resolved_proc_defaults[key] = value.call) : value.dup
           end
         end
       end

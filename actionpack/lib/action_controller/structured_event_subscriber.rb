@@ -86,6 +86,19 @@ module ActionController
       )
     end
 
+    def current_attribute_read_in_renderer(event)
+      payload = event.payload
+
+      emit_event("action_controller.current_attribute_read_in_renderer",
+        attribute: payload[:attribute],
+        template: payload[:template],
+        controller: payload[:controller]&.class&.name,
+        action: payload[:controller]&.action_name,
+        message: payload[:message],
+        stacktrace: payload[:stack_trace],
+      )
+    end
+
     def unpermitted_parameters(event)
       unpermitted_keys = event.payload[:keys]
       context = event.payload[:context]

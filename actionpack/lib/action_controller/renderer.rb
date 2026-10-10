@@ -24,7 +24,43 @@ module ActionController
   #     ApplicationController.render template: "posts/show", assigns: { post: Post.first }
   #     PostsController.render :show, assigns: { post: Post.first }
   #
+  # ## Request `Current` attributes
+  #
+  # A render made while a controller processes an action, directly or in a job
+  # performed inline during the action, runs with that request's
+  # ActiveSupport::CurrentAttributes. Its output may be sent to other users, for
+  # example in a Turbo Stream broadcast, so a partial reading `Current.user`
+  # renders as the user who made the request for every recipient. Pass what the
+  # render needs as locals, or provide it with a `Current.set` block opened
+  # around the render:
+  #
+  #     ApplicationController.render partial: "messages/message", locals: { message: message, user: nil }
+  #
+  #     Current.set(user: nil) do
+  #       ApplicationController.render partial: "messages/message", locals: { message: message }
+  #     end
+  #
+  # `config.action_controller.action_on_current_attribute_read_in_renderer` controls
+  # what happens when such a render reads an attribute set for the request that
+  # no `Current.set` block opened during the action provides:
+  #
+  # * `:log` - Logs a warning, once per render and attribute
+  # * `:notify` - Sends a `current_attribute_read_in_renderer.action_controller`
+  #   notification, once per render and attribute
+  # * `:raise` - Raises a CurrentAttributeReadError
+  # * `false` - Does nothing
+  #
+  # The message names the attribute, the template that read it and the action.
+  # A `Current.set` block still open when the action method is called, opened by a
+  # middleware or an `around_action`, holds the request's state and provides
+  # nothing. Renders made outside of a controller action are not checked.
   class Renderer
+    # Raised when a render reads a `Current` attribute set for the request.
+    class CurrentAttributeReadError < ActionControllerError
+    end
+
+    autoload :CurrentAttributeReads, "action_controller/renderer/current_attribute_reads"
+
     attr_reader :controller
 
     DEFAULTS = {
@@ -125,14 +161,22 @@ module ActionController
 
     # Renders a template to a string, just like
     # ActionController::Rendering#render_to_string.
-    def render(...)
+    def render(*args, &block)
       request = ActionDispatch::Request.new(env_for_request)
       request.routes = controller._routes
 
       instance = controller.new
       instance.set_request! request
       instance.set_response! controller.make_response!(request)
-      instance.render_to_string(...)
+
+      if (action = controller.action_on_current_attribute_read_in_renderer) &&
+          (processing = CurrentAttributeReads.processing_controller)
+        CurrentAttributeReads.new(action, processing, controller, args).observe(instance) do
+          instance.render_to_string(*args, &block)
+        end
+      else
+        instance.render_to_string(*args, &block)
+      end
     end
     alias_method :render_to_string, :render # :nodoc:
 

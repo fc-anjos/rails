@@ -2330,6 +2330,33 @@ The default value depends on the `config.load_defaults` target version:
 | (original)            | `nil`                |
 | 8.2                   | `:array`             |
 
+#### `config.action_controller.action_on_current_attribute_read_in_renderer`
+
+Controls what happens when a render through `ActionController::Renderer`
+(`ApplicationController.render`, used by Turbo Stream broadcasts), made while a
+controller processes an action, reads an `ActiveSupport::CurrentAttributes`
+attribute set for the request. Jobs performed inline during the action, by the
+inline adapter or by the test adapter performing enqueued jobs, share the
+request's `Current` attributes, so their renders are checked too. The output of
+such a render may be sent to other users, so it must not depend on the request's
+`Current.user`.
+
+An attribute is provided to the render, and not reported, while a
+`Current.set` block naming it, opened during the action, is open. A block a
+middleware or an `around_action` opens around the action holds the request's
+state and provides nothing. Values the render writes are its own.
+
+* `:log` - Logs a warning, once per render and attribute, naming the attribute,
+  the template that read it, and the action.
+* `:notify` - Sends a `current_attribute_read_in_renderer.action_controller`
+  notification, and an `action_controller.current_attribute_read_in_renderer`
+  structured event, once per render and attribute.
+* `:raise` - Raises an `ActionController::Renderer::CurrentAttributeReadError`.
+* `false` - Does nothing.
+
+Defaults to `:log`. Newly generated applications set it to `:raise` in
+`config/environments/test.rb`.
+
 ### Configuring Action Dispatch
 
 #### `config.action_dispatch.cookies_serializer`

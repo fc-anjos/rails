@@ -366,4 +366,89 @@ class CurrentAttributesTest < ActiveSupport::TestCase
       assert_equal "account/1", Current.account
     end
   end
+
+  test "observing_reads reports reads of values set as the block started" do
+    Current.world = "world/1"
+    reads = []
+
+    ActiveSupport::CurrentAttributes.observing_reads(->(current, name) { reads << [current.class, name] }) do
+      Current.world
+      Current.account
+      Current.counter_integer
+      Current.attributes
+    end
+
+    assert_equal [[Current, :world], [Current, :world]], reads
+    assert_equal "world/1", Current.world
+  end
+
+  class Request < ActiveSupport::CurrentAttributes
+    attribute :token, default: -> { Object.new }
+  end
+
+  test "observing_reads does not report a value resolved from a default block, nor resolve it again" do
+    token = Request.token
+    reads = []
+
+    ActiveSupport::CurrentAttributes.observing_reads(->(_, name) { reads << name }) do
+      assert_same token, Request.token
+    end
+    assert_empty reads
+  end
+
+  test "observing_reads does not report values the block wrote, and keeps them" do
+    Current.world = "world/1"
+    reads = []
+
+    ActiveSupport::CurrentAttributes.observing_reads(->(current, name) { reads << name }) do
+      Current.world = "world/2"
+      Current.world
+      Current.set(account: "account/2") { Current.account }
+    end
+
+    assert_empty reads
+    assert_equal "world/2", Current.world
+  end
+
+  test "observing_reads reports a value a set block sets back" do
+    Current.world = "world/1"
+    reads = []
+
+    on_read = ->(current, name) { reads << name unless current.provided_attribute?(name) }
+    ActiveSupport::CurrentAttributes.observing_reads(on_read) do
+      Current.set(world: "world/2") { }
+      Current.world
+    end
+
+    assert_equal [:world], reads
+  end
+
+  test "observing_reads leaves the attributes a plain Hash after a reset in the block" do
+    Current.world = "world/1"
+
+    ActiveSupport::CurrentAttributes.observing_reads(->(*) { }) { Current.reset }
+
+    assert_nil Current.world
+    assert_instance_of Hash, Current.instance.instance_variable_get(:@attributes)
+  end
+
+  test "provided_attribute? is true while a set block opened after the count names the attribute" do
+    opened_before = ActiveSupport::CurrentAttributes.opened_set_blocks
+
+    Current.set(world: "world/1") do
+      assert Current.instance.provided_attribute?(:world)
+      assert Current.instance.provided_attribute?(:world, opened_after: opened_before)
+      assert_not Current.instance.provided_attribute?(:account, opened_after: opened_before)
+
+      opened_inside = ActiveSupport::CurrentAttributes.opened_set_blocks
+      assert_not Current.instance.provided_attribute?(:world, opened_after: opened_inside)
+
+      Current.set("account" => "account/1") do
+        assert Current.instance.provided_attribute?(:account, opened_after: opened_inside)
+      end
+    end
+
+    assert_not Current.instance.provided_attribute?(:world)
+  end
+
 end
