@@ -156,44 +156,4 @@ class IsolatedExecutionStateTest < ActiveSupport::TestCase
     ActiveSupport::IsolatedExecutionState.isolation_level = :fiber
     assert_equal Fiber.current, ActiveSupport::IsolatedExecutionState.context
   end
-
-  test "#isolated runs the block on a store holding only the carried keys" do
-    carried = ActiveSupport::IsolatedExecutionState.carried_keys
-    ActiveSupport::IsolatedExecutionState.carry(:isolated_test_carried)
-    ActiveSupport::IsolatedExecutionState[:isolated_test_carried] = :plumbing
-    ActiveSupport::IsolatedExecutionState[:isolated_test_dropped] = :caller
-
-    ActiveSupport::IsolatedExecutionState.isolated do
-      assert_equal :plumbing, ActiveSupport::IsolatedExecutionState[:isolated_test_carried]
-      assert_nil ActiveSupport::IsolatedExecutionState[:isolated_test_dropped]
-      ActiveSupport::IsolatedExecutionState[:isolated_test_dropped] = :block
-    end
-
-    assert_equal :caller, ActiveSupport::IsolatedExecutionState[:isolated_test_dropped]
-  ensure
-    ActiveSupport::IsolatedExecutionState.instance_variable_set(:@carried_keys, carried)
-  end
-
-  test "#isolated puts the caller's store back when the block raises" do
-    ActiveSupport::IsolatedExecutionState[:isolated_test_dropped] = :caller
-
-    assert_raises(RuntimeError) do
-      ActiveSupport::IsolatedExecutionState.isolated { raise "boom" }
-    end
-
-    assert_equal :caller, ActiveSupport::IsolatedExecutionState[:isolated_test_dropped]
-  end
-
-  test "#isolated keeps the executor run of its caller" do
-    executor = Class.new(ActiveSupport::Executor)
-    completed = 0
-    executor.to_complete { completed += 1 }
-
-    executor.wrap do
-      ActiveSupport::IsolatedExecutionState.isolated { executor.wrap { } }
-      assert_equal 0, completed
-    end
-
-    assert_equal 1, completed
-  end
 end

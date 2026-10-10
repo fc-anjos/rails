@@ -61,16 +61,13 @@ Below are the default values associated with each target version. In cases of co
 #### Default Values for Target Version 8.2
 
 - [`ActiveSupport.raise_on_invalid_time_zone_parse`](#activesupport-raise-on-invalid-time-zone-parse): `true`
-- [`config.action_controller.action_on_unprovided_renderer_input`](#config-action-controller-action-on-unprovided-renderer-input): `:raise`
 - [`config.action_controller.default_protect_from_forgery_with`](#config-action-controller-default-protect-from-forgery-with): `:exception`
 - [`config.action_controller.forgery_protection_verification_strategy`](#config-action-controller-forgery-protection-verification-strategy): `:header_only`
-- [`config.action_controller.renderer_isolates_execution_state`](#config-action-controller-renderer-isolates-execution-state): `true`
 - [`config.action_controller.rescue_from_event_backtrace`](#config-action-controller-rescue-from-event-backtrace): `:array`
 - [`config.action_dispatch.default_headers`](#config-action-dispatch-default-headers): `{ "X-Frame-Options" => "SAMEORIGIN", "X-Content-Type-Options" => "nosniff", "X-Permitted-Cross-Domain-Policies" => "none", "Referrer-Policy" => "strict-origin-when-cross-origin" }`
 - [`config.action_dispatch.strict_accept_header`](#config-action-dispatch-strict-accept-header): `true`
 - [`config.action_view.erb_implementation`](#config-action-view-erb-implementation): `:herb`
 - [`config.active_job.enqueue_after_transaction_commit`](#config-active-job-enqueue-after-transaction-commit): `true`
-- [`config.active_job.isolate_inline_jobs`](#config-active-job-isolate-inline-jobs): `true`
 - [`config.active_record.postgresql_adapter_decode_bytea`](#config-active-record-postgresql-adapter-decode-bytea): `true`
 - [`config.active_record.postgresql_adapter_decode_money`](#config-active-record-postgresql-adapter-decode-money): `true`
 - [`config.active_storage.analyze`](#config-active-storage-analyze): `:immediately`
@@ -2264,72 +2261,6 @@ The default value depends on the `config.load_defaults` target version:
 | 8.1                   | `:raise`             |
 
 
-#### `config.action_controller.action_on_unprovided_renderer_input`
-
-Controls how Rails handles a render through `ActionController::Renderer`, such
-as `ApplicationController.render` or a Turbo Stream broadcast, that reads an
-input it was not given.
-
-Such a render is not part of a request, and its output may be sent to other
-users. It is given a session, cookies and a flash only when they are passed in
-the renderer's env, and otherwise reads `nil` from them, including through
-helper methods such as a `current_user` that reads `session[:user_id]`. Its
-request has no key generator, so `cookies.signed` and `cookies.encrypted` raise
-`NoMethodError`; such a read is reported as the jar opens, before it raises.
-With [`config.action_controller.renderer_isolates_execution_state`](#config-action-controller-renderer-isolates-execution-state)
-enabled, a read of a `Current` attribute that the render's caller had set to a
-value other than its default, and that the render has not written, is reported
-too. Each report says to pass the values the render needs as locals.
-
-When set to `:log`, Rails logs a warning once per render and input. When set to
-`:notify`, Rails publishes an `unprovided_renderer_input.action_controller`
-notification event once per render and input, with the input (`:session`,
-`:cookies`, `:flash` or `:current_attributes`), the key read, a message and the
-stack trace of the read. In both cases the render reads what it reads when the
-setting is `false`. When set to `:raise`, Rails raises an
-`ActionController::Renderer::UnprovidedInputError` on every such read. When set
-to `false`, reads are not checked.
-
-The default value depends on the `config.load_defaults` target version:
-
-| Starting with version | The default value is |
-| --------------------- | -------------------- |
-| (original)            | `:log`               |
-| 8.2                   | `:raise`             |
-
-#### `config.action_controller.renderer_isolates_execution_state`
-
-Determines whether a render through `ActionController::Renderer`, such as
-`ApplicationController.render` or a Turbo Stream broadcast, runs with
-`ActiveSupport::CurrentAttributes` and an execution context of its own.
-
-When `true`, the render starts with empty `Current` attributes, as a job
-performed by a queue does, so a broadcast made during an action does not render
-the requesting user's `Current.user` for every subscriber. A `Current.set`
-block around the render does not give it its attributes either. What the render
-writes to `Current` is discarded when it ends, also when it raises, and the
-caller's attributes are put back through their writers, as when a `Current.set`
-block ends. The render receives from its caller only what is registered with
-`ActiveSupport::CarriedState`, which is also what Active Job carries into a job:
-`I18n.locale`, `Time.zone`, the URL options Active Storage builds blob URLs
-from, and what libraries register.
-
-Pass the render the values it needs as locals:
-
-```ruby
-ApplicationController.render(partial: "messages/message",
-  locals: { message: message, account: Current.account, viewer: nil })
-```
-
-When `false`, the render reads and writes the caller's `Current` attributes.
-
-The default value depends on the `config.load_defaults` target version:
-
-| Starting with version | The default value is |
-| --------------------- | -------------------- |
-| (original)            | `false`              |
-| 8.2                   | `true`               |
-
 #### `config.action_controller.log_query_tags_around_actions`
 
 Determines whether controller context for query tags will be automatically
@@ -3580,34 +3511,6 @@ class NotificationJob < ApplicationJob
   self.enqueue_after_transaction_commit = false
 end
 ```
-
-The default value depends on the `config.load_defaults` target version:
-
-| Starting with version | The default value is |
-| --------------------- | -------------------- |
-| (original)            | `false`              |
-| 8.2                   | `true`               |
-
-#### `config.active_job.isolate_inline_jobs`
-
-Controls whether jobs performed on the calling thread run with their own
-`ActiveSupport::CurrentAttributes` and execution context. This applies to jobs
-performed by the `:inline` adapter, by the `:test` adapter and by
-`perform_enqueued_jobs`.
-
-When true, such a job starts with empty `Current` attributes, as it does when a
-queue performs it, and the caller's `Current` attributes are put back once the
-job finishes, also when it raises. Each attribute the job left with another
-value is set back through the caller's attribute writer, as when a
-`Current.set` block ends, so the side effects of the job's writers (`Time.zone`,
-a tenant's database setting) are undone, and a writer that cannot take the
-caller's value raises. A `Current` class the caller had not used is set back to
-its defaults through its writers. When false, a job performed during a request,
-a test or a console session reads and changes the caller's `Current`
-attributes, and a job performed outside of the Rails executor, such as in a
-Rake task, clears them.
-
-The job keeps running on the calling thread, with the same database connection.
 
 The default value depends on the `config.load_defaults` target version:
 

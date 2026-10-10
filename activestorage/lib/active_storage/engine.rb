@@ -185,14 +185,6 @@ module ActiveStorage
       end
     end
 
-    initializer "active_storage.carried_state" do
-      # URL options are the same for every user, so a render isolated from its
-      # caller's state, or a job, still builds blob URLs with them.
-      ActiveSupport::CarriedState.register :active_storage_url_options,
-        capture: -> { ActiveStorage::Current.url_options },
-        restore: ->(url_options, &block) { ActiveStorage::Current.set(url_options: url_options, &block) }
-    end
-
     initializer "active_storage.attached" do
       require "active_storage/attached"
 

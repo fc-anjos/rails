@@ -1,17 +1,3 @@
-*   Register Active Record's connection and encryption state with `ActiveSupport::CarriedState`.
-
-    A render through `ActionController::Renderer` isolated from its caller's
-    execution state connects with the caller's `connected_to` stack, for each
-    connection class, with its role, shard, `prevent_writes` and shard-swapping
-    prohibition, and decrypts within the caller's encryption context, such as
-    `protecting_encrypted_data`. Neither crosses a queue.
-
-    `config.active_record.carry_shard_into_jobs`, false by default, performs a
-    job connected to the shards it was enqueued connected to. The role is not
-    carried, so a job enqueued from a request on the reading role can write.
-
-    *Felipe Cavalheiro Anjos*
-
 *   Fix `where` with a `Range` of value objects on a single-mapping `composed_of`
     attribute.
 

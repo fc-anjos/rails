@@ -16,23 +16,6 @@ module ActiveRecord
       included do
         mattr_accessor :default_context, default: Context.new
         thread_mattr_accessor :custom_contexts
-
-        # A render isolated from its caller's execution state decrypts, or
-        # does not, as its caller does. Contexts hold encryptors, and how the
-        # caller reads encrypted data says nothing of what a job does with it,
-        # so they never cross a queue.
-        ActiveSupport::CarriedState.register :active_record_encryption_contexts,
-          capture: -> { ActiveRecord::Encryption.custom_contexts&.dup.presence },
-          restore: ->(contexts, &block) {
-            previous = ActiveRecord::Encryption.custom_contexts
-            ActiveRecord::Encryption.custom_contexts = contexts
-            begin
-              block.call
-            ensure
-              ActiveRecord::Encryption.custom_contexts = previous
-            end
-          },
-          local: true
       end
 
       class_methods do

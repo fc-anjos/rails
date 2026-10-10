@@ -373,8 +373,6 @@ module Rails
             action_controller.forgery_protection_verification_strategy = :header_only
             action_controller.default_protect_from_forgery_with = :exception
             action_controller.rescue_from_event_backtrace = :array
-            action_controller.action_on_unprovided_renderer_input = :raise
-            action_controller.renderer_isolates_execution_state = true
           end
 
           if respond_to?(:action_dispatch)
@@ -403,7 +401,6 @@ module Rails
 
           if respond_to?(:active_job)
             active_job.enqueue_after_transaction_commit = true
-            active_job.isolate_inline_jobs = true
           end
 
           ActiveSupport.raise_on_invalid_time_zone_parse = true

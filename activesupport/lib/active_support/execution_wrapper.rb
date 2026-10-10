@@ -22,11 +22,6 @@ module ActiveSupport
 
     def self.inherited(subclass)
       subclass.class_eval { @active_key = :"active_execution_wrapper_#{object_id}" }
-
-      # Code isolated from the caller's state still runs inside the caller's
-      # executor, so a wrap within it does not complete the caller's run, which
-      # would release the caller's connections and clear its query cache.
-      IsolatedExecutionState.carry(subclass.active_key)
     end
 
     def self.to_run(*args, &block)

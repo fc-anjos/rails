@@ -1651,40 +1651,6 @@ module ApplicationTests
       assert_equal :log, ActionController::Base.action_on_open_redirect
     end
 
-    test "renderer settings keep previous behavior with 8.1 defaults" do
-      remove_from_config '.*config\.load_defaults.*\n'
-      add_to_config 'config.load_defaults "8.1"'
-
-      app "development"
-
-      assert_equal :log, ActionController::Base.action_on_unprovided_renderer_input
-      assert_equal false, ActionController::Base.renderer_isolates_execution_state
-      assert_equal false, ActionController::API.renderer_isolates_execution_state
-    end
-
-    test "renderer settings raise and isolate with 8.2 defaults" do
-      remove_from_config '.*config\.load_defaults.*\n'
-      add_to_config 'config.load_defaults "8.2"'
-
-      app "development"
-
-      assert_equal :raise, ActionController::Base.action_on_unprovided_renderer_input
-      assert_equal true, ActionController::Base.renderer_isolates_execution_state
-      assert_equal true, ActionController::API.renderer_isolates_execution_state
-    end
-
-    test "renderer_isolates_execution_state can be set via new framework defaults" do
-      remove_from_config '.*config\.load_defaults.*\n'
-      add_to_config 'config.load_defaults "8.1"'
-      app_file "config/initializers/new_framework_defaults_8_2.rb", <<-RUBY
-        Rails.application.config.action_controller.renderer_isolates_execution_state = true
-      RUBY
-
-      app "development"
-
-      assert_equal true, ActionController::Base.renderer_isolates_execution_state
-    end
-
     test "config.action_dispatch.show_exceptions is sent in env" do
       make_basic_app do |application|
         application.config.action_dispatch.show_exceptions = :all
@@ -3601,36 +3567,6 @@ module ApplicationTests
 
       assert ActiveRecord::Base
       assert_equal true, ActiveJob::Base.enqueue_after_transaction_commit
-    end
-
-    test "config.active_job.isolate_inline_jobs is false with 8.1 defaults" do
-      remove_from_config '.*config\.load_defaults.*\n'
-      add_to_config 'config.load_defaults "8.1"'
-
-      app "development"
-
-      assert_equal false, ActiveJob.isolate_inline_jobs
-    end
-
-    test "config.active_job.isolate_inline_jobs is true with 8.2 defaults" do
-      remove_from_config '.*config\.load_defaults.*\n'
-      add_to_config 'config.load_defaults "8.2"'
-
-      app "development"
-
-      assert_equal true, ActiveJob.isolate_inline_jobs
-    end
-
-    test "config.active_job.isolate_inline_jobs can be set via new framework defaults" do
-      remove_from_config '.*config\.load_defaults.*\n'
-      add_to_config 'config.load_defaults "8.1"'
-      app_file "config/initializers/new_framework_defaults_8_2.rb", <<-RUBY
-        Rails.application.config.active_job.isolate_inline_jobs = true
-      RUBY
-
-      app "development"
-
-      assert_equal true, ActiveJob.isolate_inline_jobs
     end
 
     test "active record job queue is set" do

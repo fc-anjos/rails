@@ -8,11 +8,6 @@ module ActionController
 
     RENDER_FORMATS_IN_PRIORITY = [:body, :plain, :html].freeze
 
-    included do
-      mattr_accessor :action_on_unprovided_renderer_input, default: :log, instance_accessor: false
-      mattr_accessor :renderer_isolates_execution_state, default: false, instance_accessor: false
-    end
-
     module ClassMethods
       # Documentation at ActionController::Renderer#render
       delegate :render, to: :renderer

@@ -42,7 +42,6 @@ module ActiveSupport
   autoload :Configurable
   autoload :ConfigurationFile
   autoload :ContinuousIntegration
-  autoload :CarriedState
   autoload :CurrentAttributes
   autoload :DateFormats
   autoload :Dependencies

@@ -1,32 +1,3 @@
-*   Render through `ActionController::Renderer` on execution state of its own.
-
-    With `config.action_controller.renderer_isolates_execution_state`
-    enabled, `ApplicationController.render` and Turbo Stream broadcasts run on
-    an `ActiveSupport::IsolatedExecutionState` of their own, so `Current`
-    attributes, `thread_mattr_accessor` values and the rest of Rails'
-    per-thread state start empty. The render then receives what is registered
-    with `ActiveSupport::CarriedState`, which is also what a job receives from
-    the code that enqueues it: the locale, the time zone, Active Storage's URL
-    options, and what libraries register, such as a tenant. A broadcast made during
-    an action, or inside a `Current.set` block, no longer renders with the
-    caller's `Current.user`, or with the request's controller as Action Text's
-    renderer, for every subscriber. What the render writes is discarded. Pass
-    the render what it needs as locals:
-
-    ```ruby
-    message.broadcast_replace_to message.room, locals: { message: message, viewer: nil }
-    ```
-
-    `config.action_controller.action_on_unprovided_renderer_input` (`:log`,
-    `:notify`, `:raise` or `false`) reports reads of a session, cookies or flash
-    the render was not given, including `cookies.signed` and
-    `cookies.encrypted` before they raise `NoMethodError`, and, with isolation
-    enabled, reads of a `Current` attribute its caller had set.
-
-    `load_defaults "8.2"` enables isolation and sets `:raise`.
-
-    *Felipe Cavalheiro Anjos*
-
 *   Remove support for dynamic `:controller` and `:action` route segments.
 
     A route may no longer read the controller or the action out of the URL:

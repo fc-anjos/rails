@@ -36,7 +36,6 @@ require "active_record/version"
 require "active_record/deprecator"
 require "active_model/attribute_set"
 require "active_record/errors"
-require "active_record/carried_state"
 
 # :include: ../README.rdoc
 module ActiveRecord
@@ -303,14 +302,6 @@ module ActiveRecord
   #   ActiveRecord::Base.db_warnings_ignore = [/`SHOW WARNINGS` did not return the warnings/, "01000"]
   singleton_class.attr_accessor :db_warnings_ignore
   self.db_warnings_ignore = []
-
-  ##
-  # :singleton-method: carry_shard_into_jobs
-  # Whether a job is performed connected to the shards it was enqueued
-  # connected to with +connected_to+, for each connection class. Its role and
-  # whether it prevents writes are never carried. Defaults to false.
-  singleton_class.attr_accessor :carry_shard_into_jobs
-  self.carry_shard_into_jobs = false
 
   singleton_class.attr_accessor :writing_role
   self.writing_role = :writing

@@ -24,60 +24,7 @@ module ActionController
   #     ApplicationController.render template: "posts/show", assigns: { post: Post.first }
   #     PostsController.render :show, assigns: { post: Post.first }
   #
-  # ## Rendering outside a request
-  #
-  # A render through the renderer is not the response to any request, and its
-  # output may be sent to other users, for example in a Turbo Stream broadcast.
-  # Give it what it needs as locals:
-  #
-  #     ApplicationController.render partial: "messages/message",
-  #       locals: { message: message, viewer: nil }
-  #
-  # A session, cookies and a flash are given only when they are passed in its
-  # env, so a render that is not given them reads `nil` from them, directly or
-  # through a helper method such as `current_user`. Its request has no key
-  # generator, so `cookies.signed` and `cookies.encrypted` raise NoMethodError.
-  #
-  # With `config.action_controller.renderer_isolates_execution_state`
-  # enabled, the render runs on an ActiveSupport::IsolatedExecutionState store
-  # of its own, as a job performed by a queue does, so a render made during an
-  # action, or inside a `Current.set` block, does not see the caller's
-  # `Current.user`. Whatever the render writes to `Current` is discarded when
-  # it ends, and the caller's attributes are put back through their writers, as
-  # when a `Current.set` block ends. The render receives from its caller what
-  # is registered with ActiveSupport::CarriedState, which is also what a job
-  # receives from the code that enqueues it: the locale and time zone, the URL
-  # options Active Storage builds blob URLs from, and what libraries register.
-  #
-  # `config.action_controller.action_on_unprovided_renderer_input` controls what
-  # happens when a render reads an input it was not given: a session, cookies or
-  # flash missing from its env and, with isolation enabled, a `Current` attribute
-  # that its caller had set:
-  #
-  # * `:log` - Logs a warning, once per render and input, and reads what it reads
-  #   without the setting
-  # * `:notify` - Sends an `unprovided_renderer_input.action_controller` Active
-  #   Support notification, including a stack trace, once per render and input,
-  #   and reads what it reads without the setting
-  # * `:raise` - Raises an UnprovidedInputError naming what was read
-  # * `false` - Reports nothing
-  #
-  # A signed or encrypted cookie read by a render that was not given cookies is
-  # reported as it opens `cookies.signed` or `cookies.encrypted`, before the
-  # missing key generator raises. With `:log` and `:notify` the read then raises
-  # NoMethodError, as it does with `false`.
   class Renderer
-    # Raised when a render through the renderer reads an input it was not given.
-    class UnprovidedInputError < ActionControllerError
-    end
-
-    autoload :Inputs,              "action_controller/renderer/inputs"
-    autoload :UnprovidedInputs,    "action_controller/renderer/unprovided_inputs"
-    autoload :WithholdingRequest,  "action_controller/renderer/withholding_request"
-    autoload :WithheldSession,     "action_controller/renderer/withheld_session"
-    autoload :WithheldCookieJar,   "action_controller/renderer/withheld_cookie_jar"
-    autoload :WithheldFlash,       "action_controller/renderer/withheld_flash"
-
     attr_reader :controller
 
     DEFAULTS = {
@@ -178,18 +125,14 @@ module ActionController
 
     # Renders a template to a string, just like
     # ActionController::Rendering#render_to_string.
-    def render(*args, &block)
-      inputs = Inputs.new(controller, env_for_request, args)
-      request = inputs.request
+    def render(...)
+      request = ActionDispatch::Request.new(env_for_request)
       request.routes = controller._routes
 
       instance = controller.new
       instance.set_request! request
       instance.set_response! controller.make_response!(request)
-
-      inputs.rendering do
-        instance.render_to_string(*args, &block)
-      end
+      instance.render_to_string(...)
     end
     alias_method :render_to_string, :render # :nodoc:
 
