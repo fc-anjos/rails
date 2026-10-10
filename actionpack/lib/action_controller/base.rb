@@ -320,6 +320,7 @@ module ActionController
       @_params @_response @_request @_config @_url_options @_action_has_layout @_view_context_class
       @_view_renderer @_lookup_context @_routes @_view_runtime @_db_runtime @_helper_proxy
       @_marked_for_same_origin_verification @_verify_authenticity_token_ran @_rendered_format
+      @_set_blocks_opened_before_action
     )).freeze
 
     def _protected_ivars

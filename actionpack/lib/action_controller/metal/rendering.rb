@@ -8,6 +8,10 @@ module ActionController
 
     RENDER_FORMATS_IN_PRIORITY = [:body, :plain, :html].freeze
 
+    included do
+      mattr_accessor :action_on_current_attribute_read_in_renderer, default: :log, instance_accessor: false
+    end
+
     module ClassMethods
       # Documentation at ActionController::Renderer#render
       delegate :render, to: :renderer
@@ -201,6 +205,9 @@ module ActionController
       # Before processing, set the request formats in current controller formats.
       def process_action(*) # :nodoc:
         self.formats = request.formats.filter_map(&:ref)
+        # Recorded again for Instrumentation#set_blocks_opened_before_action, now
+        # that the before and around callbacks have run.
+        @_set_blocks_opened_before_action = ActiveSupport::CurrentAttributes.opened_set_blocks
         super
       end
 

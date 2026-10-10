@@ -1,3 +1,26 @@
+*   Report reads of request `Current` attributes in `ActionController::Renderer` renders.
+
+    A render through `ApplicationController.render`, as Turbo Stream broadcasts
+    make, run while a controller processes an action, or in a job performed
+    inline during it, sees the request's `ActiveSupport::CurrentAttributes`. Its
+    output may be sent to other users, so a partial reading `Current.user`
+    renders as the requester for everyone.
+
+    `config.action_controller.action_on_current_attribute_read_in_renderer`
+    (`:log`, `:notify`, `:raise` or `false`) now reports such a read, naming the
+    attribute, the template line and the action, and saying to pass the value as
+    a local. Attributes a `Current.set` block opened during the action names are
+    provided to the render and not reported; a block opened around the action
+    by a middleware or an `around_action` holds the request's state and is.
+    The default is `:log`. Newly generated applications set `:raise` in
+    `config/environments/test.rb`.
+
+    ```ruby
+    ApplicationController.render partial: "messages/message", locals: { message:, user: nil }
+    ```
+
+    *Felipe Cavalheiro Anjos*
+
 *   Remove support for dynamic `:controller` and `:action` route segments.
 
     A route may no longer read the controller or the action out of the URL:
